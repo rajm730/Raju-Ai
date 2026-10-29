@@ -118,6 +118,13 @@ fun ArcReactor(
                 repeat(4) { i -> drawArcAround(c, r * 0.965f, i * 90f + 20f, 28f, accent.copy(alpha = 0.75f * flicker), r * 0.014f) }
             }
             drawComets(t, c, r, palette, flicker)
+            // Technical markings: notched bezel turning slowly against the outer ring.
+            rotate(t * 5f, c) { drawTechMarkings(c, r * 0.875f, r, accent, palette[1], flicker) }
+            // Two tilted orbits give the reactor depth (a gyroscope seen in perspective).
+            drawOrbit(t, c, r, tilt = 28f, speed = 0.21f, color = palette[1], flicker = flicker)
+            drawOrbit(t, c, r, tilt = -38f, speed = -0.16f, color = palette[3], flicker = flicker)
+            // Energy pulses running outward along four spokes, one burst per beat.
+            if (!style.speechReactive && style.bpm > 0f) drawSpokePulses(c, r, beatPhase(t, style.bpm), spin, primary, glow * flicker)
         }
 
         // Everything below beats: the whole reactor swells slightly on each pulse
@@ -301,4 +308,71 @@ private fun DrawScope.drawDashedRing(c: Offset, radius: Float, thickness: Float,
         alpha = alpha.coerceIn(0f, 1f),
         style = Stroke(width = thickness, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, gap))),
     )
+}
+
+/** Notched bezel: fine graduations (one dashed stroke), twelve bright index marks and four brackets. */
+private fun DrawScope.drawTechMarkings(c: Offset, radius: Float, r: Float, color: Color, accent: Color, flicker: Float) {
+    val circumference = (2.0 * PI * radius).toFloat()
+    val dash = r * 0.004f
+    drawCircle(
+        color = color.copy(alpha = 0.35f * flicker),
+        radius = radius - r * 0.007f,
+        center = c,
+        style = Stroke(width = r * 0.014f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, circumference / 60f - dash))),
+    )
+    repeat(12) { i ->
+        val a = 2.0 * PI * i / 12
+        val len = r * 0.03f
+        drawLine(
+            color = accent.copy(alpha = 0.8f * flicker),
+            start = Offset(c.x + radius * cos(a).toFloat(), c.y + radius * sin(a).toFloat()),
+            end = Offset(c.x + (radius - len) * cos(a).toFloat(), c.y + (radius - len) * sin(a).toFloat()),
+            strokeWidth = r * 0.008f,
+        )
+    }
+    repeat(4) { i -> drawArcAround(c, radius + r * 0.012f, i * 90f - 6f, 12f, accent.copy(alpha = 0.9f * flicker), r * 0.01f) }
+}
+
+/**
+ * A tilted circular orbit seen in perspective (an ellipse) with a satellite. The satellite is
+ * larger and brighter in front of the core and small and dim behind it, which reads as depth.
+ */
+private fun DrawScope.drawOrbit(t: Float, c: Offset, r: Float, tilt: Float, speed: Float, color: Color, flicker: Float) {
+    val rx = r * 0.97f
+    val ry = r * 0.26f
+    rotate(tilt, c) {
+        drawOval(
+            color = color.copy(alpha = 0.22f * flicker),
+            topLeft = Offset(c.x - rx, c.y - ry),
+            size = Size(rx * 2, ry * 2),
+            style = Stroke(width = r * 0.005f),
+        )
+        repeat(2) { k ->
+            val theta = (t * speed + k * 0.5f) * 2f * PI.toFloat()
+            val depth = (sin(theta) + 1f) / 2f // 0 = behind, 1 = in front
+            val p = Offset(c.x + rx * cos(theta), c.y + ry * sin(theta))
+            drawCircle(color.copy(alpha = (0.25f + 0.55f * depth) * 0.6f * flicker), radius = r * (0.012f + 0.026f * depth), center = p)
+            drawCircle(Color.White.copy(alpha = (0.25f + 0.7f * depth) * flicker), radius = r * (0.005f + 0.01f * depth), center = p)
+        }
+    }
+}
+
+/** Short bright dashes travelling from the core ring to the rim on each beat. */
+private fun DrawScope.drawSpokePulses(c: Offset, r: Float, phase: Float, spin: Float, color: Color, strength: Float) {
+    val dist = r * (0.42f + 0.5f * phase)
+    val len = r * 0.07f
+    val alpha = (1f - phase) * 0.8f * strength
+    if (alpha <= 0.02f) return
+    repeat(4) { i ->
+        val a = Math.toRadians((i * 90f + 45f + spin * 0.15f).toDouble())
+        val ca = cos(a).toFloat()
+        val sa = sin(a).toFloat()
+        drawLine(
+            color = color.copy(alpha = alpha),
+            start = Offset(c.x + dist * ca, c.y + dist * sa),
+            end = Offset(c.x + (dist + len) * ca, c.y + (dist + len) * sa),
+            strokeWidth = r * 0.012f,
+            cap = StrokeCap.Round,
+        )
+    }
 }

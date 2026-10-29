@@ -69,7 +69,17 @@ import com.raju.aiassistant.ui.home.visuals.reactorStyleFor
 import com.raju.aiassistant.ui.home.visuals.rememberAnimationTime
 import com.raju.aiassistant.ui.home.visuals.statusHintFor
 import com.raju.aiassistant.ui.theme.ErrorRed
-import com.raju.aiassistant.ui.theme.ReactorCyan
+import com.raju.aiassistant.ui.theme.EmeraldBright
+import com.raju.aiassistant.ui.theme.HoloCyan
+import com.raju.aiassistant.ui.components.DecodingText
+import com.raju.aiassistant.ui.components.VoiceWaveform
+import com.raju.aiassistant.ui.components.hudFrame
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.raju.aiassistant.ui.theme.SuccessGreen
 import com.raju.aiassistant.ui.theme.TextSecondary
 import com.raju.aiassistant.ui.theme.WarningAmber
@@ -129,6 +139,7 @@ fun HomeScreen(
             density = if (!profile.animate) 0.35f else if (state.lowPowerMode) 0.3f else 0.62f,
             telemetry = telemetry,
             modifier = Modifier.fillMaxSize(),
+            liveClock = running,
         )
 
         Column(
@@ -138,12 +149,12 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("SEEMA AI", style = MaterialTheme.typography.headlineMedium, color = ReactorCyan)
+            HoloTitle("SEEMA AI", Color(style.primaryArgb))
 
             if (state.paused) {
                 // Paused is easy to forget: show it clearly, with a one-tap way back.
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().hudFrame(WarningAmber, cut = 8.dp, fillAlpha = 0.08f).padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -160,7 +171,7 @@ fun HomeScreen(
             if (state.safetyMode) {
                 // Safety Mode silently blocks calls, WhatsApp, SMS, apps and music: say so where the user looks.
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().hudFrame(WarningAmber, cut = 8.dp, fillAlpha = 0.08f).padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -178,7 +189,8 @@ fun HomeScreen(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                StatusChip(assistantState.label, Color(style.primaryArgb))
+                // The state tag breathes with the reactor's own (frame-capped) clock.
+                StatusChip(assistantState.label, Color(style.primaryArgb), pulse = if (running) ({ 0.65f + 0.35f * sin(timeProvider() * 3f) }) else null)
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
                 StatusChip(
                     when {
@@ -219,11 +231,18 @@ fun HomeScreen(
                 )
             }
 
-            Text(
+            val stateColor = Color(style.primaryArgb)
+            DecodingText(
                 assistantState.label.uppercase(),
-                style = MaterialTheme.typography.titleLarge,
-                color = Color(style.primaryArgb),
+                style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 4.sp, shadow = Shadow(stateColor.copy(alpha = 0.8f), blurRadius = 16f)),
+                color = stateColor,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            VoiceWaveform(
+                assistantState, stateColor, timeProvider, speechLevel,
+                Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(26.dp),
             )
             val caption = when {
                 state.previewState != null -> "Visual preview only — nothing is running."
@@ -287,13 +306,19 @@ private fun ControlButton(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
 ) {
+    val accent = if (highlighted) SuccessGreen else MaterialTheme.colorScheme.primary
     FilledTonalButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.height(72.dp),
+        shape = CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp),
+        border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) 0.6f else 0.2f)),
         contentPadding = PaddingValues(4.dp),
-        colors = if (highlighted) ButtonDefaults.filledTonalButtonColors(containerColor = SuccessGreen.copy(alpha = 0.25f), contentColor = SuccessGreen)
-        else ButtonDefaults.filledTonalButtonColors(),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = accent.copy(alpha = if (highlighted) 0.22f else 0.08f),
+            contentColor = if (highlighted) SuccessGreen else MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = Color.Transparent,
+        ),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
@@ -301,6 +326,20 @@ private fun ControlButton(
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
+}
+
+/** The "SEEMA AI" wordmark: wide-spaced holographic letters with a soft glow. */
+@Composable
+private fun HoloTitle(text: String, color: Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.headlineMedium.copy(
+            letterSpacing = 8.sp,
+            fontWeight = FontWeight.Bold,
+            brush = Brush.horizontalGradient(listOf(EmeraldBright, color, HoloCyan)),
+            shadow = Shadow(color.copy(alpha = 0.7f), blurRadius = 22f),
+        ),
+    )
 }
 
 /** False when the user disabled animations in Developer options / Accessibility ("Remove animations"). */

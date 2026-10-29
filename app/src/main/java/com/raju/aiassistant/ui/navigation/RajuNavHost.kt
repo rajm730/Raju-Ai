@@ -41,6 +41,19 @@ import com.raju.aiassistant.ui.chat.ChatScreen
 import com.raju.aiassistant.ui.home.HomeScreen
 import com.raju.aiassistant.ui.settings.SettingsScreen
 import com.raju.aiassistant.ui.tools.ToolsScreen
+import com.raju.aiassistant.ui.components.HudEffects
+import com.raju.aiassistant.ui.components.LocalHudEffects
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun RajuNavHost(navController: NavHostController = rememberNavController()) {
@@ -111,10 +124,29 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
         }
     }
 
+    // Decorative HUD motion follows the user's motion settings (and the system "Remove animations").
+    val settings by container.currentSettings.collectAsStateWithLifecycle()
+    val resolver = LocalContext.current.contentResolver
+    val systemAnimations = remember(resolver, settings.reducedMotion) {
+        android.provider.Settings.Global.getFloat(resolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    }
+    val hudEffects = HudEffects.forMotion(animate = !settings.reducedMotion && systemAnimations, lowPower = settings.lowPowerMode)
+
+    CompositionLocalProvider(LocalHudEffects provides hudEffects) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            val glow = MaterialTheme.colorScheme.primary
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                // A thin emerald horizon line above the bar.
+                modifier = Modifier.drawBehind {
+                    drawLine(
+                        Brush.horizontalGradient(listOf(Color.Transparent, glow.copy(alpha = 0.7f), Color.Transparent)),
+                        Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx(),
+                    )
+                },
+            ) {
                 Destination.entries.forEach { dest ->
                     NavigationBarItem(
                         selected = current == dest,
@@ -135,6 +167,11 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
             navController = navController,
             startDestination = Destination.start.route,
             modifier = Modifier.padding(padding),
+            // Short holographic fade between screens (the default is a slow 700 ms crossfade).
+            enterTransition = { fadeIn(tween(if (hudEffects.pulses) 240 else 0)) + scaleIn(tween(240), initialScale = if (hudEffects.pulses) 0.985f else 1f) },
+            exitTransition = { fadeOut(tween(if (hudEffects.pulses) 140 else 0)) },
+            popEnterTransition = { fadeIn(tween(if (hudEffects.pulses) 240 else 0)) },
+            popExitTransition = { fadeOut(tween(if (hudEffects.pulses) 140 else 0)) },
         ) {
             composable(Destination.Home.route) {
                 HomeScreen(
@@ -146,5 +183,6 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
             composable(Destination.Tools.route) { ToolsScreen(onOpenChat = { navigateTo(Destination.Chat) }) }
             composable(Destination.Settings.route) { SettingsScreen() }
         }
+    }
     }
 }

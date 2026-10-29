@@ -287,6 +287,26 @@ class AndroidDeviceTools(private val context: Context) : DeviceTools {
     private fun start(intent: Intent, success: String, failure: String): ToolOutcome =
         if (tryStart(intent)) ToolOutcome.Done(success) else ToolOutcome.Failed(failure)
 
+    override fun openWebPage(url: String): ToolOutcome =
+        start(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Opened $url", "No browser could open $url")
+
+    override fun shareTextFile(name: String, content: String): ToolOutcome = try {
+        val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(dir, name)
+        file.writeText(content)
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "text/plain"
+        val send = Intent(Intent.ACTION_SEND)
+            .setType(mime)
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT, name)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val chooser = Intent.createChooser(send, "Save or share $name").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        start(chooser, "File \"$name\" ready (${content.length} characters) — choose where to save or share it.", "Could not open the share sheet for $name.")
+    } catch (e: Exception) {
+        ToolOutcome.Failed("Could not save $name: ${e.message}")
+    }
+
     private companion object {
         const val MAPS_PKG = "com.google.android.apps.maps"
     }

@@ -10,23 +10,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 private val RajuColors = darkColorScheme(
-    primary = ReactorCyan,
-    onPrimary = SpaceBlack,
-    primaryContainer = PanelNavyHigh,
-    onPrimaryContainer = ReactorCore,
-    secondary = ReactorBlue,
-    onSecondary = SpaceBlack,
+    primary = Emerald,
+    onPrimary = VoidBlack,
+    primaryContainer = EmeraldMist,
+    onPrimaryContainer = EmeraldBright,
+    secondary = HoloCyan,
+    onSecondary = VoidBlack,
+    secondaryContainer = GlassPanelHigh,
+    onSecondaryContainer = EmeraldBright,
     tertiary = HoloViolet,
-    background = SpaceBlack,
+    background = VoidBlack,
     onBackground = TextPrimary,
-    surface = PanelNavy,
+    surface = GlassPanel,
     onSurface = TextPrimary,
-    surfaceVariant = PanelNavyHigh,
+    surfaceVariant = GlassPanelHigh,
     onSurfaceVariant = TextSecondary,
-    surfaceContainer = PanelNavy,
+    surfaceContainer = GlassPanel,
+    surfaceContainerHigh = GlassPanelHigh,
+    surfaceContainerHighest = GlassPanelHigh,
+    surfaceContainerLow = GlassPanel,
     error = ErrorRed,
-    onError = SpaceBlack,
-    outline = ReactorCyan.copy(alpha = 0.4f),
+    onError = VoidBlack,
+    outline = Emerald.copy(alpha = 0.4f),
+    outlineVariant = Emerald.copy(alpha = 0.18f),
 )
 
 private val RajuTypography = Typography(
@@ -36,6 +42,8 @@ private val RajuTypography = Typography(
     bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 22.sp),
     bodyMedium = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, lineHeight = 20.sp),
     labelLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium, fontSize = 14.sp, letterSpacing = 1.sp),
+    /** Small technical HUD labels (status codes, telemetry). Monospace, but never below 11 sp. */
+    labelSmall = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 1.2.sp),
 )
 
 /** The app is always dark (sci-fi HUD look), independent of the system theme. */

@@ -30,7 +30,18 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.raju.aiassistant.domain.voice.afterWakeWord
 import com.raju.aiassistant.domain.voice.isStopCommand
 import com.raju.aiassistant.domain.voice.stripEcho
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import com.raju.aiassistant.domain.business.BusinessStore
+import com.raju.aiassistant.domain.business.NoBusinessStore
+import com.raju.aiassistant.domain.business.Period
+import com.raju.aiassistant.domain.business.businessContext
+import com.raju.aiassistant.domain.business.describeJourney
+import com.raju.aiassistant.domain.business.formatRupees
+import com.raju.aiassistant.domain.business.periodRange
+import com.raju.aiassistant.domain.business.summarizeExpenses
+import com.raju.aiassistant.domain.business.summarizeJourneys
 
 /** A question the user must answer before the assistant continues. */
 data class PendingRequest(
@@ -44,6 +55,8 @@ data class PendingRequest(
 }
 
 private const val DAY_MS = 24 * 60 * 60_000L
+/** Official Indian Railways PNR enquiry (needs a captcha, so the user finishes it there). */
+private const val PNR_ENQUIRY_URL = "https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html?locale=en"
 private val DEVANAGARI = Regex("[\\u0900-\\u097F]")
 /** Consecutive recogniser errors (not silence) tolerated in hands-free mode before it stops. */
 private const val MAX_LISTEN_FAILURES = 3
@@ -84,6 +97,8 @@ class AssistantEngine(
     private val conversationMode: ConversationMode = NoConversationMode,
     private val wakeListener: WakeListener = NoWakeListener,
     private val hourOfDay: () -> Int = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
+    private val business: BusinessStore = NoBusinessStore,
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
 ) {
     private val _state = MutableStateFlow(AssistantState.Idle)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
@@ -412,10 +427,12 @@ class AssistantEngine(
             if (warnedModels.add(model)) note("⚠️ ${providerId.shortName} model \"$model\": $w")
         }
         _state.value = AssistantState.Thinking
-        val memoryTexts = if (s.memoryEnabled) runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()) else emptyList()
+        val allMemories = if (s.memoryEnabled) runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()) else emptyList()
+        // Smart memory: with many memories, the ones related to this message are used.
+        val memoryTexts = relevantMemories(allMemories, text)
         val recentOpenings = _transcript.value.asReversed().asSequence()
             .filter { it.role == ChatRole.ASSISTANT }.take(3).map { openingOf(it.text) }.filter { it.isNotBlank() }.toList()
-        val context = PromptContext(voiceTurn = fromVoice, recentOpenings = recentOpenings, partOfDay = partOfDay(hourOfDay()))
+        val context = PromptContext(voiceTurn = fromVoice, recentOpenings = recentOpenings, partOfDay = partOfDay(hourOfDay()), business = businessSnapshot())
         val system = buildSystemPrompt(memoryTexts, nowDescription(), s.personality, context)
         val turns = toTurns(_transcript.value, s.historyLimit * 2, ModelAdvice.historyCharBudget(model))
 
@@ -577,6 +594,115 @@ class AssistantEngine(
             is AssistantAction.Navigate -> report(action, tools.navigate(action.destination, action.mode))
             is AssistantAction.CopyText -> report(action, tools.copyToClipboard(action.text))
             is AssistantAction.SearchWeb -> searchWeb(action, provider, model, system, speak)
+            is AssistantAction.ExpenseAdd -> {
+                val saved = runCatching { business.addExpense(action.amountPaise, action.note, action.category) }.isSuccess
+                if (!saved) report(action, ActionStatus.FAILED, "Could not save the expense.")
+                else {
+                    val (from, to) = periodRange(Period.TODAY, clock(), zone())
+                    val total = runCatching { business.expensesBetween(from, to).sumOf { it.amountPaise } }.getOrDefault(action.amountPaise)
+                    report(action, ActionStatus.SUCCESS, "Khata: ${formatRupees(action.amountPaise)} ${action.note} (${action.category}) saved. Today's total ${formatRupees(total)}.")
+                }
+            }
+            is AssistantAction.ExpenseUndo -> when (val removed = runCatching { business.deleteLastExpense() }.getOrNull()) {
+                null -> report(action, ActionStatus.FAILED, "There is no expense to remove.")
+                else -> report(action, ActionStatus.SUCCESS, "Removed: ${formatRupees(removed.amountPaise)} ${removed.note}.")
+            }
+            is AssistantAction.ExpenseSummary -> {
+                val (from, to) = periodRange(action.period, clock(), zone())
+                val list = runCatching { business.expensesBetween(from, to) }.getOrNull()
+                if (list == null) report(action, ActionStatus.FAILED, "Could not read the khata.")
+                else informational(action, summarizeExpenses(list, action.period, prefersHindi()), speak)
+            }
+            is AssistantAction.JourneySave -> {
+                val ok = runCatching { business.saveJourney(action.journey) }.isSuccess
+                report(action, if (ok) ActionStatus.SUCCESS else ActionStatus.FAILED, if (ok) "Saved in PNR diary: ${describeJourney(action.journey)}." else "Could not save the journey.")
+            }
+            is AssistantAction.JourneyList -> {
+                val list = runCatching { business.journeysFrom(today()) }.getOrNull()
+                if (list == null) report(action, ActionStatus.FAILED, "Could not read the PNR diary.")
+                else informational(action, summarizeJourneys(list, prefersHindi()), speak)
+            }
+            is AssistantAction.JourneyRemove -> {
+                val ok = runCatching { business.removeJourney(action.pnr) }.getOrDefault(false)
+                report(action, if (ok) ActionStatus.SUCCESS else ActionStatus.FAILED, if (ok) "PNR ${action.pnr} removed from the diary." else "PNR ${action.pnr} is not in the diary.")
+            }
+            is AssistantAction.PnrStatus -> {
+                // There is no free official PNR API: open the official page with the PNR ready to paste.
+                tools.copyToClipboard(action.pnr)
+                when (val o = tools.openWebPage(PNR_ENQUIRY_URL)) {
+                    is ToolOutcome.Done -> report(action, ActionStatus.SUCCESS, "Official PNR page opened — PNR ${action.pnr} is copied, paste it there and fill the captcha.")
+                    else -> report(action, o)
+                }
+            }
+            is AssistantAction.MandiPrice -> {
+                val place = action.place?.let { " $it" }.orEmpty()
+                searchWeb(AssistantAction.SearchWeb("${action.commodity} mandi bhav today$place price per quintal agmarknet"), provider, model, system, speak)
+            }
+            is AssistantAction.SaveFile -> report(action, tools.shareTextFile(action.name, action.content))
+            is AssistantAction.Research -> research(action, provider, model, system, speak)
+        }
+    }
+
+    /** A result the user asked to know (summary, list): shown, logged and, in a voice turn, spoken. */
+    private suspend fun informational(action: AssistantAction, message: String, speak: Boolean) {
+        report(action, ActionStatus.SUCCESS, message)
+        if (speak) say(message)
+    }
+
+    private fun today(): LocalDate = Instant.ofEpochMilli(clock()).atZone(zone()).toLocalDate()
+
+    private fun prefersHindi(): Boolean =
+        lastUserText?.let { DEVANAGARI.containsMatchIn(it) } ?: settings.value.speechLanguage.startsWith("hi")
+
+    /** Today's khata and upcoming journeys for the prompt (null when empty or unreadable). */
+    private suspend fun businessSnapshot(): String? = runCatching {
+        val (from, to) = periodRange(Period.TODAY, clock(), zone())
+        businessContext(business.expensesBetween(from, to), business.journeysFrom(today()))
+    }.getOrNull()
+
+    /** Deep research: up to three searches, merged and de-duplicated, summarised as a report with sources. */
+    private suspend fun research(action: AssistantAction.Research, provider: AiProvider, model: String, system: String, speak: Boolean) {
+        val key = secret(SecretId.TAVILY_API_KEY)
+        if (key.isNullOrBlank()) {
+            report(action, ActionStatus.FAILED, "Research needs a Tavily API key (Settings → Web search).")
+            return
+        }
+        if (speak && !replySpoken) say(if (prefersHindi()) "ठीक है, अच्छे से रिसर्च करती हूँ…" else "Okay, let me research that properly…", allowBargeIn = false)
+        _state.value = AssistantState.Executing
+        val client = searchFor(key)
+        val results = mutableListOf<com.raju.aiassistant.data.search.SearchResult>()
+        var lastError: String? = null
+        for (q in action.queries) {
+            when (val r = client.search(q, maxResults = 4)) {
+                is AiResult.Success -> results += r.value.results
+                is AiResult.Failure -> lastError = r.message
+            }
+        }
+        val merged = results.distinctBy { it.url }.take(8)
+        if (merged.isEmpty()) {
+            report(action, ActionStatus.FAILED, "Research found nothing" + (lastError?.let { ": $it" } ?: " for \"${action.topic}\"."))
+            return
+        }
+        actionLog.safeLog(action, ActionStatus.SUCCESS, "${action.queries.size} searches, ${merged.size} sources")
+        _state.value = AssistantState.Thinking
+        val followUp = buildResearchFollowUp(action.topic, merged.map { it.title to it.url }, merged.map { it.snippet })
+        val turns = toTurns(_transcript.value, settings.value.historyLimit * 2, ModelAdvice.historyCharBudget(model)) +
+            com.raju.aiassistant.domain.ai.Turn(com.raju.aiassistant.domain.ai.TurnRole.USER, followUp)
+        val sources = merged.mapIndexed { i, r -> "[${i + 1}] ${r.title} — ${r.domain}\n${r.url}" }.joinToString("\n")
+        when (val r = provider.chat(model, system, turns)) {
+            is AiResult.Success -> {
+                val reportText = parseReply(r.value).text
+                record(ChatRole.ASSISTANT, "$reportText\n\nSources:\n$sources")
+                // Only the opening summary is read aloud; the full report stays in Chat.
+                if (speak) {
+                    val first = reportText.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(300)
+                    say(first + if (prefersHindi()) " पूरी रिपोर्ट चैट में है।" else " The full report is in Chat.")
+                }
+            }
+            is AiResult.Failure -> {
+                record(ChatRole.SYSTEM, "Found sources but the AI report failed (${r.message}).\n$sources")
+                _state.value = AssistantState.Error
+            }
         }
     }
 

@@ -41,6 +41,9 @@ interface DeviceTools {
         ToolOutcome.Failed("Calendar is not supported here.")
     fun navigate(destination: String, mode: TravelMode): ToolOutcome = ToolOutcome.Failed("Navigation is not supported here.")
     fun copyToClipboard(text: String): ToolOutcome = ToolOutcome.Failed("Clipboard is not supported here.")
+    fun openWebPage(url: String): ToolOutcome = ToolOutcome.Failed("Opening web pages is not supported here.")
+    /** Writes [content] to a file named [name] and opens the share sheet (save to Files/Drive, send). */
+    fun shareTextFile(name: String, content: String): ToolOutcome = ToolOutcome.Failed("Saving files is not supported here.")
 }
 
 enum class TravelMode { DRIVE, WALK, BIKE, TRANSIT }

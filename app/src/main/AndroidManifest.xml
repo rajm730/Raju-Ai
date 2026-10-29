@@ -63,6 +63,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.RajuAI">
 
+        <!-- Files Seema writes (code, notes) are shared through this provider, never as raw paths. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -627,4 +627,70 @@ class AssistantEngineTest {
         settle()
         assertEquals(1, speaker.spoken.size) // asked only once
     }
+
+    private class FakeBusiness : com.raju.aiassistant.domain.business.BusinessStore {
+        val expenses = mutableListOf<com.raju.aiassistant.domain.business.Expense>()
+        val journeys = mutableListOf<com.raju.aiassistant.domain.business.Journey>()
+        override suspend fun addExpense(amountPaise: Long, note: String, category: String): Long {
+            expenses += com.raju.aiassistant.domain.business.Expense(expenses.size + 1L, amountPaise, note, category, 1_000L); return expenses.size.toLong()
+        }
+        override suspend fun deleteLastExpense() = expenses.removeLastOrNull()
+        override suspend fun expensesBetween(fromMillis: Long, toMillis: Long) = expenses.filter { it.createdAt in fromMillis until toMillis }
+        override suspend fun saveJourney(journey: com.raju.aiassistant.domain.business.Journey): Long { journeys += journey; return 1 }
+        override suspend fun journeysFrom(date: java.time.LocalDate) = journeys.filter { !it.date.isBefore(date) }
+        override suspend fun removeJourney(pnr: String) = journeys.removeIf { it.pnr == pnr }
+    }
+
+    private fun TestScope.businessEngine(khata: FakeBusiness, vararg replies: AiResult<String>): AssistantEngine {
+        provider = FakeProvider(ArrayDeque(replies.toList()))
+        return AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speaker, voice = voice, isOnline = { online }, clock = { 5_000L }, nowDescription = { "now" },
+            business = khata, zone = { java.time.ZoneOffset.UTC },
+        )
+    }
+
+    @Test
+    fun expensesAreSavedSummarisedAndKnownToThePrompt() = runTest {
+        val khata = FakeBusiness()
+        val e = businessEngine(
+            khata,
+            AiResult.Success("""Likh diya. <action>{"type":"expense_add","amount":200,"note":"petrol","category":"fuel"}</action>"""),
+            AiResult.Success("""Dekhti hoon. <action>{"type":"expense_summary","period":"today"}</action>"""),
+        )
+        e.submit("200 ka petrol daala")
+        settle()
+        assertEquals(20_000L, khata.expenses.single().amountPaise)
+        assertTrue(e.transcript.value.any { it.text.contains("Today's total ₹200") })
+        e.submit("aaj kitna kharcha hua?")
+        settle()
+        assertTrue(speaker.spoken.last(), speaker.spoken.last().contains("200 rupees")) // "₹" is spoken as a word
+    }
+
+    @Test
+    fun pnrStatusOpensTheOfficialPageAndNeverGuesses() = runTest {
+        val khata = FakeBusiness()
+        val e = businessEngine(khata, AiResult.Success("""Official page kholti hoon. <action>{"type":"pnr_status","pnr":"1234567890"}</action>"""))
+        e.submit("PNR 1234567890 ka status?")
+        settle()
+        // FakeTools can't open web pages: the failure is reported honestly.
+        assertEquals(ActionStatus.FAILED, store.logs.last().second)
+    }
+
+    @Test
+    fun researchMergesSearchesIntoOneReportWithSources() = runTest {
+        val khata = FakeBusiness()
+        val e = businessEngine(
+            khata,
+            AiResult.Success("""<action>{"type":"research","query":"EV","queries":["ev price","ev range"]}</action>"""),
+            AiResult.Success("EVs are cheaper to run [1].\nDetails\n- range [1]"),
+        )
+        e.submit("EV ke baare mein research karo")
+        settle()
+        val last = e.transcript.value.last { it.role == ChatRole.ASSISTANT }
+        assertTrue(last.text.contains("Sources:") && last.text.contains("https://site.com"))
+        assertEquals(1, last.text.split("https://site.com").size - 1) // duplicate results merged
+    }
 }

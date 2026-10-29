@@ -26,7 +26,7 @@ import kotlin.math.sin
 private val GLYPHS = "0101011001ABCDEF0123456789<>/{}[]=+*#$%&XYZ".toCharArray()
 
 /** The rain and HUD redraw at this rate, independent of the reactor's frame rate. */
-private const val RAIN_FPS = 12f
+private const val RAIN_FPS = 15f
 
 /**
  * Full-screen sci-fi backdrop for the home screen: falling code columns, a faint grid, HUD corner
@@ -46,6 +46,8 @@ fun CyberBackground(
     telemetry: () -> List<String>,
     modifier: Modifier = Modifier,
     focus: Offset = Offset(0.5f, 0.42f),
+    /** Show the local time; off when the screen is drawn static, so it never shows a stale time. */
+    liveClock: Boolean = true,
 ) {
     val paint = remember {
         Paint().apply {
@@ -58,12 +60,55 @@ fun CyberBackground(
     // The animated layer only redraws when this tick changes (RAIN_FPS times a second),
     // so the reactor can animate smoothly on top without repainting the whole screen.
     val tick by remember(time) { derivedStateOf { (time() * RAIN_FPS).toInt() } }
+    val motes = remember(density) { makeMotes((28 * density).toInt().coerceAtLeast(6)) }
     Canvas(modifier.graphicsLayer()) {
         val t = tick / RAIN_FPS
+        if (density > 0f) drawMotesAndStreams(motes, color, accent, t)
         drawCodeRain(paint, color, t, density, focus)
         drawScanLine(color, t)
         drawHudFrame(color, accent, t)
-        drawTelemetry(paint, color, accent, t, telemetry())
+        drawTelemetry(paint, color, accent, telemetry(), liveClock)
+    }
+}
+
+private class Mote(val x: Float, val y: Float, val depth: Float, val drift: Float, val phase: Float)
+
+private fun makeMotes(count: Int) = List(count) { i ->
+    Mote(
+        x = pseudoRandom(i * 3 + 101),
+        y = pseudoRandom(i * 5 + 202),
+        depth = 0.3f + 0.7f * pseudoRandom(i * 7 + 303),
+        drift = pseudoRandom(i * 11 + 404) - 0.5f,
+        phase = pseudoRandom(i * 13 + 505) * 6.28f,
+    )
+}
+
+/**
+ * Two depth layers of glowing motes rising slowly (near ones bigger, brighter and faster: parallax)
+ * and three faint horizontal data streams with packets gliding along them.
+ */
+private fun DrawScope.drawMotesAndStreams(motes: List<Mote>, color: Color, accent: Color, t: Float) {
+    motes.forEach { m ->
+        val y = ((m.y - t * 0.012f * m.depth) % 1f + 1f) % 1f
+        val x = m.x + 0.02f * sin(t * 0.4f + m.phase) + m.drift * 0.01f
+        val twinkle = 0.5f + 0.5f * sin(t * 1.7f + m.phase)
+        val p = Offset(x * size.width, y * size.height)
+        val r = (1.2f + 2.2f * m.depth) * density
+        if (m.depth > 0.75f) drawCircle(accent.copy(alpha = 0.10f * twinkle), r * 3f, p) // halo only on near motes
+        drawCircle(color.copy(alpha = (0.25f + 0.45f * twinkle) * m.depth), r, p)
+    }
+    repeat(3) { i ->
+        val y = size.height * (0.12f + 0.37f * i + 0.02f * sin(t * 0.3f + i))
+        drawLine(color.copy(alpha = 0.06f), Offset(0f, y), Offset(size.width, y), 1f * density)
+        val speed = 0.06f + 0.035f * i
+        repeat(2) { k ->
+            val head = (((t * speed + k * 0.5f + i * 0.21f) % 1f) * 1.3f - 0.15f) * size.width
+            val len = size.width * 0.12f
+            drawLine(
+                Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(alpha = 0.45f)), startX = head - len, endX = head),
+                Offset(head - len, y), Offset(head, y), 1.6f * density,
+            )
+        }
     }
 }
 
@@ -96,7 +141,10 @@ private fun DrawScope.drawCodeRain(paint: Paint, color: Color, t: Float, density
         val nc = canvas.nativeCanvas
         for (col in 0 until cols) {
             if (pseudoRandom(col * 31 + 7) > density) continue // only some columns run
-            val speed = 5f + pseudoRandom(col * 13 + 1) * 9f // rows per second
+            // Depth: far columns use smaller, dimmer glyphs, so the rain has layers (parallax).
+            val depth = 0.55f + 0.45f * pseudoRandom(col * 41 + 11)
+            paint.textSize = cell * 0.85f * depth
+            val speed = (5f + pseudoRandom(col * 13 + 1) * 9f) * depth // rows per second; far columns fall slower
             val length = 5 + (pseudoRandom(col * 17 + 3) * 9f).toInt()
             val cycle = rows + length + (pseudoRandom(col * 23 + 9) * rows).toInt()
             val headRow = ((t * speed + pseudoRandom(col * 19 + 5) * cycle) % cycle).toInt()
@@ -110,7 +158,7 @@ private fun DrawScope.drawCodeRain(paint: Paint, color: Color, t: Float, density
                 val clear = ((d - clearRadius * 0.55f) / (clearRadius * 0.6f)).coerceIn(0f, 1f)
                 if (clear <= 0.02f) continue
                 val fade = 1f - k / length.toFloat()
-                val alpha = (if (k == 0) 0.85f else 0.32f * fade) * clear
+                val alpha = (if (k == 0) 0.85f else 0.32f * fade) * clear * depth
                 paint.color = (if (k == 0) head else color).copy(alpha = alpha).toArgb()
                 // Glyphs change now and then, like the classic terminal rain.
                 val glyph = (pseudoRandom(col * 7919 + row * 104729 + (t * (2f + k % 3)).toInt()) * GLYPHS.size).toInt().coerceIn(0, GLYPHS.size - 1)
@@ -163,7 +211,15 @@ private fun DrawScope.drawHudFrame(color: Color, accent: Color, t: Float) {
     drawLine(accent.copy(alpha = 0.8f), Offset(size.width - m, size.height - marker + rulerTop * 0.3f), Offset(size.width - m - 18f * density, size.height - marker + rulerTop * 0.3f), strokeWidth = 2.5f * density)
 }
 
-private fun DrawScope.drawTelemetry(paint: Paint, color: Color, accent: Color, t: Float, lines: List<String>) {
+private val clockFormat = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ENGLISH)
+private val dateFormat = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.ENGLISH)
+
+private fun clockLines(): List<String> {
+    val now = java.util.Date()
+    return listOf("LOCAL ${clockFormat.format(now)}", dateFormat.format(now).uppercase())
+}
+
+private fun DrawScope.drawTelemetry(paint: Paint, color: Color, accent: Color, lines: List<String>, liveClock: Boolean) {
     val text = 9.5f * density
     paint.textSize = text
     paint.isFakeBoldText = true
@@ -177,14 +233,11 @@ private fun DrawScope.drawTelemetry(paint: Paint, color: Color, accent: Color, t
             nc.drawText(line, x, y, paint)
             y += text * 1.35f
         }
-        // Right side: scrolling memory addresses, like a terminal dump.
+        // Right side: the phone's real local time (no invented data).
         paint.isFakeBoldText = false
-        paint.color = color.copy(alpha = 0.28f).toArgb()
+        paint.color = color.copy(alpha = 0.45f).toArgb()
         val right = size.width - 24f * density
-        val base = (t * 3f).toInt()
-        for (k in 0 until 6) {
-            val v = (pseudoRandom(base + k) * 0xFFFFFF).toInt()
-            val s = "0x%06X".format(v)
+        if (liveClock) clockLines().forEachIndexed { k, s ->
             nc.drawText(s, right - paint.measureText(s), size.height * 0.165f + text * k * 1.35f, paint)
         }
     }

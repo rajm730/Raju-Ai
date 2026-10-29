@@ -12,6 +12,7 @@ import com.raju.aiassistant.data.prefs.SettingsRepository
 import com.raju.aiassistant.data.repository.ActionLogRepository
 import com.raju.aiassistant.data.repository.ConversationRepository
 import com.raju.aiassistant.data.repository.MemoryRepository
+import com.raju.aiassistant.data.repository.BusinessRepository
 import com.raju.aiassistant.data.search.TavilyClient
 import com.raju.aiassistant.data.tools.AndroidDeviceTools
 import com.raju.aiassistant.data.tts.AndroidTts
@@ -74,6 +75,7 @@ class AppContainer(context: Context) {
     val conversationRepository by lazy { ConversationRepository(database.chatDao()) }
     val memoryRepository by lazy { MemoryRepository(database.memoryDao()) }
     val actionLogRepository by lazy { ActionLogRepository(database.actionLogDao()) }
+    val businessRepository by lazy { BusinessRepository(database.businessDao()) }
 
     val connectivityObserver by lazy { ConnectivityObserver(appContext) }
     val online: StateFlow<Boolean> by lazy { connectivityObserver.isOnline.stateIn(appScope, SharingStarted.Eagerly, true) }
@@ -191,6 +193,7 @@ class AppContainer(context: Context) {
             conversationMode = conversationAudio,
             transcriber = deepgramTranscriber,
             wakeListener = MicWakeListener(appContext, appScope),
+            business = businessRepository,
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }
