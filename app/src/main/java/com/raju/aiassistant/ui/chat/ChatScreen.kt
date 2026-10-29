@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -192,14 +194,18 @@ private fun MessageBubble(message: ChatMessage) {
     }
     val isUser = message.role == ChatRole.USER
     Box(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
+        // Holographic message tags: user = cyan, Seema = emerald, each with cut corners on its own side.
+        val accent = if (isUser) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
         Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            shape = if (isUser) CutCornerShape(topStart = 12.dp, bottomEnd = 2.dp, topEnd = 2.dp, bottomStart = 2.dp)
+            else CutCornerShape(topEnd = 12.dp, bottomStart = 2.dp, topStart = 2.dp, bottomEnd = 2.dp),
+            color = accent.copy(alpha = if (isUser) 0.14f else 0.08f),
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
             // Long-press to select and copy.
             SelectionContainer {
-                Text(linkify(message.text), Modifier.padding(12.dp), style = MaterialTheme.typography.bodyLarge, color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface)
+                Text(linkify(message.text), Modifier.padding(12.dp), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
