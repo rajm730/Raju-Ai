@@ -410,4 +410,48 @@ class AssistantEngineTest {
         settle()
         assertEquals(listOf("FREQ=DAILY"), tools.eventRules)
     }
+
+    @Test
+    fun talkingOverSeemaStopsHerAndSheListensAgain() = runTest {
+        var started = 0
+        val fakeBargeIn = object : BargeIn {
+            override fun start(onSpeech: () -> Unit) { started++; onSpeech() } // user talks right away
+            override fun stop() {}
+        }
+        provider = FakeProvider(ArrayDeque(listOf(AiResult.Success("Bahut lamba jawab…"))))
+        val e = AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speaker, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
+            bargeIn = fakeBargeIn,
+        )
+        e.startHandsFree()
+        voice.onResult!!("kuch batao")
+        settle()
+        assertEquals(1, started)
+        assertTrue(speaker.stops > 0) // speech was cut short
+        assertEquals(2, voice.starts) // and she is listening again
+        assertEquals(AssistantState.Listening, e.state.value)
+    }
+
+    @Test
+    fun typedChatNeverUsesBargeIn() = runTest {
+        var started = 0
+        val fakeBargeIn = object : BargeIn {
+            override fun start(onSpeech: () -> Unit) { started++ }
+            override fun stop() {}
+        }
+        provider = FakeProvider(ArrayDeque(listOf(AiResult.Success("Haan."))))
+        val e = AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speaker, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
+            bargeIn = fakeBargeIn,
+        )
+        e.submit("hello")
+        settle()
+        assertEquals(0, started)
+    }
 }

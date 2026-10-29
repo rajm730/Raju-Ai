@@ -72,6 +72,8 @@ data class UserSettings(
     val continuousConversation: Boolean = false,
     /** Hands-free: start listening as soon as the app is open and keep listening until Stop is pressed. */
     val autoListen: Boolean = true,
+    /** Talking while Seema speaks stops her (voice conversations only). */
+    val bargeIn: Boolean = true,
     val personality: Personality = Personality.MASTI,
     val announceNotifications: Boolean = false,
     val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),

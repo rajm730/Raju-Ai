@@ -25,6 +25,21 @@ interface VoiceInput {
     fun stop()
 }
 
+/**
+ * Barge-in: notices the user starting to talk while the assistant is speaking, so the user can cut
+ * a long answer short just by speaking ("ruko", or the next question).
+ */
+interface BargeIn {
+    /** Starts watching the microphone; [onSpeech] is called at most once. */
+    fun start(onSpeech: () -> Unit)
+    fun stop()
+}
+
+object NoBargeIn : BargeIn {
+    override fun start(onSpeech: () -> Unit) {}
+    override fun stop() {}
+}
+
 data class VoiceError(val message: String, val noSpeech: Boolean = false, val permissionDenied: Boolean = false)
 
 interface ChatHistory {

@@ -70,6 +70,7 @@ class AssistantEngine(
     private val isOnline: () -> Boolean,
     private val clock: () -> Long = System::currentTimeMillis,
     private val nowDescription: () -> String = { java.util.Date(clock()).toString() },
+    private val bargeIn: BargeIn = NoBargeIn,
 ) {
     private val _state = MutableStateFlow(AssistantState.Idle)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
@@ -303,11 +304,24 @@ class AssistantEngine(
 
     private suspend fun say(text: String) {
         _state.value = AssistantState.Speaking
-        val result = speaker.speak(speakableText(text))
+        // In a voice conversation the user can talk over Seema to stop her (barge-in).
+        var interrupted = false
+        val canBargeIn = settings.value.bargeIn && (handsFree || _voiceSession.value)
+        if (canBargeIn) bargeIn.start { interrupted = true; speaker.stop() }
+        val result = try {
+            speaker.speak(speakableText(text))
+        } finally {
+            bargeIn.stop()
+        }
         // The same fallback reason (e.g. "ElevenLabs failed …") is shown once, not under every reply.
-        if (result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
-        lastVoiceNote = result.error
+        if (!interrupted && result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
+        if (!interrupted) lastVoiceNote = result.error
         _state.value = AssistantState.Thinking
+    }
+
+    /** "Ruko": stop speaking right now but keep the conversation (hands-free listens again next). */
+    fun interrupt() {
+        speaker.stop()
     }
 
     // ---------------------------------------------------------------- actions

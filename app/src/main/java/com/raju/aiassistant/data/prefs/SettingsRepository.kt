@@ -62,6 +62,7 @@ class SettingsRepository(private val context: Context) {
             autoSpeakReplies = this[Keys.AUTO_SPEAK] ?: d.autoSpeakReplies,
             continuousConversation = this[Keys.CONTINUOUS] ?: d.continuousConversation,
             autoListen = this[Keys.AUTO_LISTEN] ?: d.autoListen,
+            bargeIn = this[Keys.BARGE_IN] ?: d.bargeIn,
             personality = enumOr(this[Keys.PERSONALITY], d.personality),
             announceNotifications = this[Keys.ANNOUNCE] ?: d.announceNotifications,
             announceApps = this[Keys.ANNOUNCE_APPS] ?: d.announceApps,
@@ -104,6 +105,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setAutoSpeak(v: Boolean) = edit { it[Keys.AUTO_SPEAK] = v }
     suspend fun setContinuous(v: Boolean) = edit { it[Keys.CONTINUOUS] = v }
     suspend fun setAutoListen(v: Boolean) = edit { it[Keys.AUTO_LISTEN] = v }
+    suspend fun setBargeIn(v: Boolean) = edit { it[Keys.BARGE_IN] = v }
     suspend fun setPersonality(v: Personality) = edit { it[Keys.PERSONALITY] = v.name }
     suspend fun setAnnounce(v: Boolean) = edit { it[Keys.ANNOUNCE] = v }
     suspend fun setAnnounceApp(pkg: String, enabled: Boolean) = edit {
@@ -157,6 +159,7 @@ class SettingsRepository(private val context: Context) {
         val AUTO_SPEAK = booleanPreferencesKey("auto_speak")
         val CONTINUOUS = booleanPreferencesKey("continuous_conversation")
         val AUTO_LISTEN = booleanPreferencesKey("auto_listen")
+        val BARGE_IN = booleanPreferencesKey("barge_in")
         val PERSONALITY = stringPreferencesKey("personality")
         val ANNOUNCE = booleanPreferencesKey("announce_notifications")
         val ANNOUNCE_APPS = stringSetPreferencesKey("announce_apps")

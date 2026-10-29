@@ -4,7 +4,9 @@ import android.Manifest
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -184,6 +186,12 @@ fun HomeScreen(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = assistantState == AssistantState.Speaking,
+                        onClickLabel = "Stop talking",
+                    ) { viewModel.interrupt() }
                     .semantics { contentDescription = "Assistant status: ${assistantState.label}" },
                 contentAlignment = Alignment.Center,
             ) {
