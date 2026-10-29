@@ -70,7 +70,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     fun stop() {
         preview.value = null
-        engine.stop()
+        c.stopEverything()
     }
 
     /** Shows a state's visuals for testing the UI. Pass null to return to the real state. */

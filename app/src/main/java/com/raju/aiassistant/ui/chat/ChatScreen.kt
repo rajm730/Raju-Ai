@@ -26,6 +26,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,6 +58,7 @@ import com.raju.aiassistant.domain.model.ChatRole
 import com.raju.aiassistant.ui.RajuViewModelFactory
 import com.raju.aiassistant.ui.theme.ReactorBlue
 import com.raju.aiassistant.ui.theme.TextSecondary
+import com.raju.aiassistant.ui.theme.WarningAmber
 
 @Composable
 fun ChatScreen(
@@ -87,6 +89,12 @@ fun ChatScreen(
             Text("Chat · ${state.providerName}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             TextButton(onClick = onOpenSettings) { Text("Settings") }
         }
+        state.model?.let { m ->
+            Text("Model: $m", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
+        state.modelWarning?.let { w ->
+            Text("⚠ $w", style = MaterialTheme.typography.bodyMedium, color = WarningAmber)
+        }
         if (!state.historyEnabled) {
             Text("History is off — this chat is not saved.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
@@ -108,6 +116,11 @@ fun ChatScreen(
                 }
             }
             items(state.messages, key = { it.id }) { MessageBubble(it) }
+            if (state.canRetry) {
+                item {
+                    OutlinedButton(onClick = viewModel::retry) { Text("Retry") }
+                }
+            }
             if (state.state == AssistantState.Thinking || state.state == AssistantState.Executing) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -135,7 +148,8 @@ fun ChatScreen(
             }
             FilledIconButton(
                 onClick = { viewModel.send(input); input = "" },
-                enabled = input.isNotBlank(),
+                // Disabled while a reply is being prepared, so one tap = one request.
+                enabled = input.isNotBlank() && !busy,
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }

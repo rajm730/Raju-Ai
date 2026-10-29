@@ -48,14 +48,3 @@ interface AiProvider {
 
     suspend fun chat(model: String, systemPrompt: String, turns: List<Turn>): AiResult<String>
 }
-
-/** Picks a sensible default when the user has not chosen a model yet. */
-fun pickDefaultModel(provider: ProviderId, models: List<AiModel>): AiModel? {
-    val usable = models.filterNot { m -> listOf("image", "vision", "embed", "tts", "audio", "whisper", "guard", "playai").any { m.id.contains(it, true) } }
-    val preferred = when (provider) {
-        ProviderId.GEMINI -> usable.firstOrNull { it.id.contains("flash", true) && !it.id.contains("lite", true) }
-        ProviderId.GROQ -> usable.firstOrNull { it.id.contains("llama-3.3-70b", true) }
-            ?: usable.firstOrNull { it.id.contains("llama", true) }
-    }
-    return preferred ?: usable.firstOrNull() ?: models.firstOrNull()
-}

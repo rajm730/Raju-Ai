@@ -10,5 +10,6 @@ class RajuApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        container.consentNotifier.createChannel()
     }
 }

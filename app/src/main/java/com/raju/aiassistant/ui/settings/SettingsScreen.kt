@@ -3,7 +3,9 @@ package com.raju.aiassistant.ui.settings
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -57,6 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.raju.aiassistant.BuildConfig
+import com.raju.aiassistant.data.tts.LanguageSupport
+import com.raju.aiassistant.domain.ai.ModelAdvice
 import com.raju.aiassistant.domain.ai.ProviderId
 import com.raju.aiassistant.domain.model.AnnounceApp
 import com.raju.aiassistant.domain.model.MusicService
@@ -86,14 +90,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
     val context = LocalContext.current
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
 
-    // Re-check notification access whenever the user returns from system settings.
+    // Re-check the real permission/access state every time the user returns from system settings.
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val notificationAccess = remember(lifecycleState) { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && viewModel.notificationAccessEnabled() }
+    LaunchedEffect(lifecycleState) { if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) viewModel.refreshDiagnostics() }
+    val diag by viewModel.diagnostics.collectAsStateWithLifecycle()
+    val notificationAccess = diag.listenerEnabled
 
     val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         viewModel.setDirectCalling(granted)
     }
+    val refreshAfter = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { viewModel.refreshDiagnostics() }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { viewModel.refreshDiagnostics() }
+    val callRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.refreshDiagnostics()
+    }
     fun open(intent: Intent) = runCatching { context.startActivity(intent) }
+    fun appInfo() = open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+    fun appNotificationSettings() = open(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    )
+    fun askPostNotifications() {
+        if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else appNotificationSettings()
+    }
 
     Column(
         Modifier
@@ -104,6 +122,65 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         info?.let { Text(it, color = TextSecondary) }
+
+        // ---------------------------------------------------------------- diagnostics
+        HudPanel(title = "Status & permissions") {
+            Text("Each item shows the real current state. Tap a button to fix it in Android settings.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            val test = s.lastTests[s.defaultProvider]
+            StatusRow(
+                "AI (${s.defaultProvider.shortName})",
+                when {
+                    test == null -> "not tested — tap Test below"
+                    test.success -> "last test connected"
+                    else -> "last test failed"
+                },
+                ok = test?.success == true,
+            )
+            StatusRow("Microphone", if (diag.micGranted) "allowed" else "not allowed", diag.micGranted, if (diag.micGranted) null else "Allow" to { refreshAfter.launch(Manifest.permission.RECORD_AUDIO) })
+            StatusRow("Speech recognition", if (diag.speechRecognitionAvailable) "available" else "not available — install Google speech services", diag.speechRecognitionAvailable)
+            StatusRow("Contacts", if (diag.contactsGranted) "allowed" else "not allowed (needed for calls by name)", diag.contactsGranted, if (diag.contactsGranted) null else "Allow" to { refreshAfter.launch(Manifest.permission.READ_CONTACTS) })
+            StatusRow(
+                "Notification access",
+                when {
+                    diag.listenerEnabled && diag.listenerConnected -> "on and connected"
+                    diag.listenerEnabled -> "on, waiting for Android to connect"
+                    else -> "off"
+                },
+                diag.listenerEnabled,
+                "Open" to { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+            )
+            if (!diag.listenerEnabled) {
+                Text(
+                    "If the Raju AI switch is greyed out or won't turn on: Android blocks this for apps installed from an APK file. Open App info → ⋮ (top right) → \"Allow restricted settings\" → confirm, then come back and switch it on.",
+                    style = MaterialTheme.typography.bodyMedium, color = WarningAmber,
+                )
+                OutlinedButton(onClick = { appInfo() }) { Text("Open App info") }
+            }
+            StatusRow(
+                "App notifications",
+                if (diag.appNotificationsAllowed) "allowed" else "blocked (needed for Read/Skip while the app is closed)",
+                diag.appNotificationsAllowed,
+                if (diag.appNotificationsAllowed) null else "Allow" to { askPostNotifications() },
+            )
+            StatusRow(
+                "Call announcements",
+                when {
+                    !diag.callRoleSupported -> "not supported on this phone"
+                    diag.callRoleHeld -> "call-screening role granted"
+                    else -> "role not granted"
+                },
+                diag.callRoleHeld,
+                if (diag.callRoleSupported && !diag.callRoleHeld) "Grant" to { viewModel.callRoleRequestIntent()?.let { callRole.launch(it) } } else null,
+            )
+            val tts = diag.tts
+            StatusRow(
+                "Android voice (Hindi)",
+                if (tts == null) "checking…" else "${tts.hindi.label} · engine ${tts.engine ?: "none"}",
+                tts?.hindi == LanguageSupport.AVAILABLE,
+                if (tts != null && tts.hindi != LanguageSupport.AVAILABLE) "Install" to { open(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) } else null,
+            )
+            OutlinedButton(onClick = { open(Intent("com.android.settings.TTS_SETTINGS")) }) { Text("Android text-to-speech settings") }
+        }
 
         // ---------------------------------------------------------------- AI
         HudPanel(title = "AI provider") {
@@ -124,6 +201,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
                     )
                 }
                 ModelPicker(
+                    provider = p,
                     selected = s.modelFor(p),
                     options = models[p].orEmpty().map { it.id },
                     onLoad = { viewModel.loadModels(p) },
@@ -192,9 +270,33 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             OutlinedButton(onClick = { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) {
                 Text(if (notificationAccess) "Manage notification access" else "Enable notification access")
             }
-            ToggleRow("Announce notifications", s.announceNotifications, viewModel::setAnnounce)
+            ToggleRow("Announce notifications", s.announceNotifications) { on ->
+                viewModel.setAnnounce(on)
+                if (on && !diag.appNotificationsAllowed) askPostNotifications()
+            }
+            ToggleRow("Ask before reading (say who wrote, read only after you tap Read)", s.askBeforeReading, viewModel::setAskBeforeReading)
+            ToggleRow("Announce WhatsApp/Telegram calls (best effort, from their notifications)", s.announceAppCalls, viewModel::setAnnounceAppCalls)
             AnnounceApp.entries.forEach { app ->
                 ToggleRow("   ${app.label}", app.packageName in s.announceApps) { viewModel.setAnnounceApp(app.packageName, it) }
+            }
+        }
+
+        // ---------------------------------------------------------------- calls
+        HudPanel(title = "Incoming calls") {
+            Text(
+                "Raju AI can say who is calling on your SIM. Android allows this only for the app you choose as \"call screening\" app. Raju AI never blocks, answers, rejects or records calls. The name comes from your Contacts; unknown callers are not guessed.",
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
+            ToggleRow("Announce incoming calls", s.announceCalls) { on ->
+                viewModel.setAnnounceCalls(on)
+                if (on && diag.callRoleSupported && !diag.callRoleHeld) viewModel.callRoleRequestIntent()?.let { callRole.launch(it) }
+            }
+            ToggleRow("Speak the number of unknown callers", s.speakCallerNumber, viewModel::setSpeakCallerNumber)
+            if (s.announceCalls && !diag.callRoleHeld) {
+                Text(
+                    if (diag.callRoleSupported) "Not active yet: grant the call-screening role (Status & permissions → Call announcements)." else "Not available: this phone does not offer the call-screening role.",
+                    style = MaterialTheme.typography.bodyMedium, color = WarningAmber,
+                )
             }
         }
 
@@ -293,9 +395,10 @@ private fun SecretCard(
 }
 
 @Composable
-private fun ModelPicker(selected: String?, options: List<String>, onLoad: () -> Unit, onSelect: (String) -> Unit) {
+private fun ModelPicker(provider: ProviderId, selected: String?, options: List<String>, onLoad: () -> Unit, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     LaunchedEffect(open) { if (open && options.isEmpty()) onLoad() }
+    ModelAdvice.warning(selected)?.let { Text("⚠ $it", style = MaterialTheme.typography.bodyMedium, color = WarningAmber) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Model: ${selected ?: "auto (chosen on first use)"}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Box {
@@ -303,7 +406,12 @@ private fun ModelPicker(selected: String?, options: List<String>, onLoad: () -> 
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 if (options.isEmpty()) DropdownMenuItem(text = { Text("Loading models… (save a valid key first)") }, onClick = { open = false })
                 options.forEach { m ->
-                    DropdownMenuItem(text = { Text(m) }, onClick = { onSelect(m); open = false })
+                    val tag = when {
+                        ModelAdvice.isRecommended(provider, m) -> "  ★ recommended"
+                        ModelAdvice.warning(m) != null -> "  ⚠ not for Hindi"
+                        else -> ""
+                    }
+                    DropdownMenuItem(text = { Text(m + tag) }, onClick = { onSelect(m); open = false })
                 }
             }
         }
@@ -342,6 +450,17 @@ private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         RadioButton(selected = selected, onClick = null)
         Text(label, Modifier.padding(start = 12.dp))
+    }
+}
+
+@Composable
+private fun StatusRow(label: String, status: String, ok: Boolean, action: Pair<String, () -> Unit>? = null) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(status, style = MaterialTheme.typography.bodyMedium, color = if (ok) SuccessGreen else WarningAmber)
+        }
+        action?.let { (text, onClick) -> TextButton(onClick = onClick) { Text(text) } }
     }
 }
 

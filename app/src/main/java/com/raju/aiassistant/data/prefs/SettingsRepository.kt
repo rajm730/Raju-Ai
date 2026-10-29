@@ -50,6 +50,10 @@ class SettingsRepository(private val context: Context) {
             continuousConversation = this[Keys.CONTINUOUS] ?: d.continuousConversation,
             announceNotifications = this[Keys.ANNOUNCE] ?: d.announceNotifications,
             announceApps = this[Keys.ANNOUNCE_APPS] ?: d.announceApps,
+            askBeforeReading = this[Keys.ASK_BEFORE_READING] ?: d.askBeforeReading,
+            announceCalls = this[Keys.ANNOUNCE_CALLS] ?: d.announceCalls,
+            speakCallerNumber = this[Keys.SPEAK_CALLER_NUMBER] ?: d.speakCallerNumber,
+            announceAppCalls = this[Keys.ANNOUNCE_APP_CALLS] ?: d.announceAppCalls,
             directCalling = this[Keys.DIRECT_CALLING] ?: d.directCalling,
             musicService = enumOr(this[Keys.MUSIC_SERVICE], d.musicService),
             memoryEnabled = this[Keys.MEMORY] ?: d.memoryEnabled,
@@ -81,6 +85,10 @@ class SettingsRepository(private val context: Context) {
         val current = it[Keys.ANNOUNCE_APPS] ?: UserSettings().announceApps
         it[Keys.ANNOUNCE_APPS] = if (enabled) current + pkg else current - pkg
     }
+    suspend fun setAskBeforeReading(v: Boolean) = edit { it[Keys.ASK_BEFORE_READING] = v }
+    suspend fun setAnnounceCalls(v: Boolean) = edit { it[Keys.ANNOUNCE_CALLS] = v }
+    suspend fun setSpeakCallerNumber(v: Boolean) = edit { it[Keys.SPEAK_CALLER_NUMBER] = v }
+    suspend fun setAnnounceAppCalls(v: Boolean) = edit { it[Keys.ANNOUNCE_APP_CALLS] = v }
     suspend fun setDirectCalling(v: Boolean) = edit { it[Keys.DIRECT_CALLING] = v }
     suspend fun setMusicService(v: MusicService) = edit { it[Keys.MUSIC_SERVICE] = v.name }
     suspend fun setMemoryEnabled(v: Boolean) = edit { it[Keys.MEMORY] = v }
@@ -116,6 +124,10 @@ class SettingsRepository(private val context: Context) {
         val ANNOUNCE = booleanPreferencesKey("announce_notifications")
         val ANNOUNCE_APPS = stringSetPreferencesKey("announce_apps")
         val DIRECT_CALLING = booleanPreferencesKey("direct_calling")
+        val ASK_BEFORE_READING = booleanPreferencesKey("ask_before_reading")
+        val ANNOUNCE_CALLS = booleanPreferencesKey("announce_calls")
+        val SPEAK_CALLER_NUMBER = booleanPreferencesKey("speak_caller_number")
+        val ANNOUNCE_APP_CALLS = booleanPreferencesKey("announce_app_calls")
         val MUSIC_SERVICE = stringPreferencesKey("music_service")
         val MEMORY = booleanPreferencesKey("memory_enabled")
         val SAFETY = booleanPreferencesKey("safety_mode")

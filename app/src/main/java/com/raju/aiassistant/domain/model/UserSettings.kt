@@ -36,6 +36,14 @@ data class UserSettings(
     val continuousConversation: Boolean = false,
     val announceNotifications: Boolean = false,
     val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),
+    /** Say only who wrote, and read the message only after the user taps Read. */
+    val askBeforeReading: Boolean = true,
+    /** Announce incoming phone (SIM) calls. Needs the call-screening role. Off until the user opts in. */
+    val announceCalls: Boolean = false,
+    /** Speak the number of callers who are not in Contacts (otherwise "unknown number"). */
+    val speakCallerNumber: Boolean = false,
+    /** Best effort: announce WhatsApp/Telegram calls from their call notifications. */
+    val announceAppCalls: Boolean = false,
     val directCalling: Boolean = false,
     val musicService: MusicService = MusicService.YOUTUBE_MUSIC,
     val memoryEnabled: Boolean = true,

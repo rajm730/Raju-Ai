@@ -16,6 +16,15 @@ import kotlin.coroutines.resume
 
 data class VoiceOption(val name: String, val label: String)
 
+enum class LanguageSupport(val label: String) {
+    AVAILABLE("available"),
+    MISSING_DATA("voice data not installed"),
+    NOT_SUPPORTED("not supported by this engine"),
+    ENGINE_UNAVAILABLE("no TTS engine"),
+}
+
+data class TtsDiagnostics(val engine: String?, val hindi: LanguageSupport, val englishIndia: LanguageSupport)
+
 /** Android's built-in TextToSpeech, used offline and as fallback. Synthesises to WAV for unified playback. */
 class AndroidTts(private val context: Context) {
     private var tts: TextToSpeech? = null
@@ -41,6 +50,20 @@ class AndroidTts(private val context: Context) {
         val ok = deferred.await()
         if (!ok) { ready = null; tts?.shutdown(); tts = null }
         return if (ok) tts else null
+    }
+
+    /**
+     * What the phone's TTS engine really supports (checked with isLanguageAvailable, not assumed).
+     * [engine] is the engine package, e.g. com.google.android.tts or com.samsung.SMT.
+     */
+    suspend fun diagnostics(): TtsDiagnostics {
+        val e = engine() ?: return TtsDiagnostics(null, LanguageSupport.ENGINE_UNAVAILABLE, LanguageSupport.ENGINE_UNAVAILABLE)
+        fun check(tag: String) = when (runCatching { e.isLanguageAvailable(Locale.forLanguageTag(tag)) }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)) {
+            TextToSpeech.LANG_AVAILABLE, TextToSpeech.LANG_COUNTRY_AVAILABLE, TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE -> LanguageSupport.AVAILABLE
+            TextToSpeech.LANG_MISSING_DATA -> LanguageSupport.MISSING_DATA
+            else -> LanguageSupport.NOT_SUPPORTED
+        }
+        return TtsDiagnostics(runCatching { e.defaultEngine }.getOrNull(), check("hi-IN"), check("en-IN"))
     }
 
     /** Voices installed for Hindi and English (India), as reported by the TTS engine. */

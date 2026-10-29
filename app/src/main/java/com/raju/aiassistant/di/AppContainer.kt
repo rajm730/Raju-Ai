@@ -19,6 +19,10 @@ import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
 import com.raju.aiassistant.data.voice.VoiceInputManager
 import com.raju.aiassistant.domain.assistant.AnnouncementDeduper
+import com.raju.aiassistant.domain.notify.AnnouncementCoordinator
+import com.raju.aiassistant.domain.notify.CallDeduper
+import com.raju.aiassistant.notifications.ConsentNotifier
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.raju.aiassistant.domain.assistant.AssistantEngine
 import com.raju.aiassistant.domain.model.UserSettings
 import com.raju.aiassistant.domain.voice.SpeechPipeline
@@ -68,6 +72,24 @@ class AppContainer(context: Context) {
     val voiceInput by lazy { VoiceInputManager(appContext) }
     val deviceTools by lazy { AndroidDeviceTools(appContext) }
     val announcementDeduper = AnnouncementDeduper()
+    val callDeduper = CallDeduper()
+
+    /** True while Android has the notification listener connected (not just permission granted). */
+    val listenerConnected = MutableStateFlow(false)
+
+    val consentNotifier by lazy { ConsentNotifier(appContext) }
+    val announcements by lazy {
+        AnnouncementCoordinator(appScope, speaker, currentSettings).also { coordinator ->
+            appScope.launch { coordinator.pending.collect { consentNotifier.show(it) } }
+        }
+    }
+
+    /** Stop button: assistant, speech and any pending message announcement. */
+    fun stopEverything() {
+        engine.stop()
+        announcements.stopAll()
+        speaker.stop()
+    }
 
     val engine by lazy {
         AssistantEngine(

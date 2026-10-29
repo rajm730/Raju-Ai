@@ -94,7 +94,7 @@ class AssistantEngineTest {
     private var online = true
     private lateinit var provider: FakeProvider
     private var search: WebSearch = object : WebSearch {
-        override suspend fun search(query: String, maxResults: Int) =
+        override suspend fun search(query: String, maxResults: Int, topic: String?) =
             AiResult.Success(SearchResponse("ans", listOf(SearchResult("Site", "https://site.com", "snippet"))))
     }
 

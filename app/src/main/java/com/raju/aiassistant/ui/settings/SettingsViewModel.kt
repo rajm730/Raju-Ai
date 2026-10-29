@@ -1,6 +1,14 @@
 package com.raju.aiassistant.ui.settings
 
+import android.Manifest
+import android.app.role.RoleManager
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.raju.aiassistant.data.tts.TtsDiagnostics
+import com.raju.aiassistant.domain.ai.ModelAdvice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raju.aiassistant.core.security.maskSecret
@@ -34,6 +42,22 @@ data class SecretStatus(
     val busy: Boolean = false,
 )
 
+/** Real, current state of everything the assistant depends on. Refreshed every time Settings resumes. */
+data class Diagnostics(
+    val micGranted: Boolean = false,
+    val contactsGranted: Boolean = false,
+    val speechRecognitionAvailable: Boolean = false,
+    /** The user switched Raju AI on in Android's Notification access list. */
+    val listenerEnabled: Boolean = false,
+    /** Android actually connected the listener (can lag behind or fail even when enabled). */
+    val listenerConnected: Boolean = false,
+    /** The app may show its own notifications (POST_NOTIFICATIONS on Android 13+ and not blocked in App info). */
+    val appNotificationsAllowed: Boolean = false,
+    val callRoleSupported: Boolean = false,
+    val callRoleHeld: Boolean = false,
+    val tts: TtsDiagnostics? = null,
+)
+
 data class SettingsUiState(
     val settings: UserSettings = UserSettings(),
     val secrets: Map<SecretId, SecretStatus> = emptyMap(),
@@ -53,6 +77,38 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     private val _info = MutableStateFlow<String?>(null)
     val info: StateFlow<String?> = _info.asStateFlow()
     val activeTtsEngine: StateFlow<String?> = c.speaker.activeEngine
+    private val _diagnostics = MutableStateFlow(Diagnostics())
+    val diagnostics: StateFlow<Diagnostics> = _diagnostics.asStateFlow()
+
+    fun refreshDiagnostics() {
+        viewModelScope.launch {
+            val ctx = c.appContext
+            fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
+            // RoleManager exists only on Android 10+ (API 29); keep every use inside the version check.
+            var roleSupported = false
+            var roleHeld = false
+            if (Build.VERSION.SDK_INT >= 29) {
+                val rm = ctx.getSystemService(RoleManager::class.java)
+                roleSupported = rm?.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) == true
+                roleHeld = rm?.isRoleHeld(RoleManager.ROLE_CALL_SCREENING) == true
+            }
+            _diagnostics.value = Diagnostics(
+                micGranted = granted(Manifest.permission.RECORD_AUDIO),
+                contactsGranted = granted(Manifest.permission.READ_CONTACTS),
+                speechRecognitionAvailable = c.voiceInput.isAvailable(),
+                listenerEnabled = notificationAccessEnabled(),
+                listenerConnected = c.listenerConnected.value,
+                appNotificationsAllowed = c.consentNotifier.canPost(),
+                callRoleSupported = roleSupported,
+                callRoleHeld = roleHeld,
+                tts = runCatching { c.androidTts.diagnostics() }.getOrNull(),
+            )
+        }
+    }
+
+    /** System dialog that asks the user to make Raju AI the call-screening app (Android 10+). */
+    fun callRoleRequestIntent(): Intent? =
+        if (Build.VERSION.SDK_INT >= 29) c.appContext.getSystemService(RoleManager::class.java)?.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING) else null
 
     val uiState: StateFlow<SettingsUiState> = combine(c.currentSettings, c.secureKeyStore.configured, masked, messages) { settings, configured, maskedValues, msgs ->
         SettingsUiState(
@@ -96,7 +152,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             val result: AiResult<String> = when {
                 provider != null -> when (val r = c.providerFactory.create(provider, key).listModels()) {
                     is AiResult.Success -> {
-                        _models.value = _models.value + (provider to r.value)
+                        _models.value = _models.value + (provider to ModelAdvice.rank(provider, r.value))
                         if (c.currentSettings.value.modelFor(provider) == null) {
                             pickDefaultModel(provider, r.value)?.let { repo.setModel(provider, it.id) }
                         }
@@ -156,16 +212,20 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     fun setContinuous(v: Boolean) = launch { repo.setContinuous(v) }
     fun setAnnounce(v: Boolean) = launch { repo.setAnnounce(v) }
     fun setAnnounceApp(pkg: String, v: Boolean) = launch { repo.setAnnounceApp(pkg, v) }
+    fun setAskBeforeReading(v: Boolean) = launch { repo.setAskBeforeReading(v) }
+    fun setAnnounceCalls(v: Boolean) = launch { repo.setAnnounceCalls(v) }
+    fun setSpeakCallerNumber(v: Boolean) = launch { repo.setSpeakCallerNumber(v) }
+    fun setAnnounceAppCalls(v: Boolean) = launch { repo.setAnnounceAppCalls(v) }
     fun setDirectCalling(v: Boolean) = launch { repo.setDirectCalling(v) }
     fun setMusicService(v: MusicService) = launch { repo.setMusicService(v) }
     fun setMemoryEnabled(v: Boolean) = launch { repo.setMemoryEnabled(v) }
     fun setSafetyMode(v: Boolean) = launch {
         repo.setSafetyMode(v)
-        if (v) c.engine.stop()
+        if (v) c.stopEverything()
     }
     fun setPaused(v: Boolean) = launch {
         repo.setAssistantPaused(v)
-        if (v) c.engine.stop()
+        if (v) c.stopEverything()
     }
     fun setLowPowerMode(v: Boolean) = launch { repo.setLowPowerMode(v) }
     fun setReducedMotion(v: Boolean) = launch { repo.setReducedMotion(v) }

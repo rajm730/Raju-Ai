@@ -4,6 +4,8 @@ import com.raju.aiassistant.data.search.WebSearch
 import com.raju.aiassistant.domain.ai.AiProvider
 import com.raju.aiassistant.domain.ai.AiResult
 import com.raju.aiassistant.domain.ai.FailureKind
+import com.raju.aiassistant.domain.ai.ModelAdvice
+import com.raju.aiassistant.domain.ai.pickDefaultModel
 import com.raju.aiassistant.domain.ai.ProviderId
 import com.raju.aiassistant.domain.model.AssistantState
 import com.raju.aiassistant.domain.model.ChatMessage
@@ -85,6 +87,9 @@ class AssistantEngine(
     val partialTranscript: StateFlow<String> get() = voice.partial
 
     private var job: Job? = null
+    private val submitGuard = SubmitGuard()
+    private var lastUserText: String? = null
+    private val warnedModels = mutableSetOf<String>()
     private var decision: CompletableDeferred<Decision>? = null
     private var localId = -1L
 
@@ -101,8 +106,21 @@ class AssistantEngine(
     fun submit(text: String, fromVoice: Boolean = false) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        // One user submission → one request: ignore an identical message sent again within a moment.
+        if (!submitGuard.accept(trimmed, clock())) return
         cancelWork()
+        lastUserText = trimmed
         job = scope.launch { handleUserMessage(trimmed, fromVoice) }
+    }
+
+    /** True when the last request failed and can be sent again. */
+    val canRetry: Boolean get() = lastUserText != null && _lastError.value != null
+
+    /** Re-sends the last message after a failure, without adding it to the chat again. */
+    fun retry() {
+        val text = lastUserText ?: return
+        cancelWork()
+        job = scope.launch { handleUserMessage(text, fromVoice = false, recordUser = false) }
     }
 
     /** Starts listening (tap-to-talk). In continuous mode, listening resumes after each reply. */
@@ -152,9 +170,9 @@ class AssistantEngine(
 
     // ---------------------------------------------------------------- core flow
 
-    private suspend fun handleUserMessage(text: String, fromVoice: Boolean) {
+    private suspend fun handleUserMessage(text: String, fromVoice: Boolean, recordUser: Boolean = true) {
         _lastError.value = null
-        record(ChatRole.USER, text)
+        if (recordUser) record(ChatRole.USER, text)
         val s = settings.value
 
         if (!isOnline()) {
@@ -169,7 +187,7 @@ class AssistantEngine(
         }
         val provider = providerFor(providerId, key)
         val model = s.modelFor(providerId) ?: when (val models = provider.listModels()) {
-            is AiResult.Success -> com.raju.aiassistant.domain.ai.pickDefaultModel(providerId, models.value)?.id
+            is AiResult.Success -> pickDefaultModel(providerId, models.value)?.id
             is AiResult.Failure -> { fail(models.message); return }
         }
         if (model == null) {
@@ -177,17 +195,29 @@ class AssistantEngine(
             return
         }
 
+        ModelAdvice.warning(model)?.let { w ->
+            if (warnedModels.add(model)) note("⚠️ ${providerId.shortName} model \"$model\": $w")
+        }
         _state.value = AssistantState.Thinking
         val memoryTexts = if (s.memoryEnabled) runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()) else emptyList()
         val system = buildSystemPrompt(memoryTexts, nowDescription())
-        val turns = toTurns(_transcript.value, s.historyLimit * 2)
+        val turns = toTurns(_transcript.value, s.historyLimit * 2, ModelAdvice.historyCharBudget(model))
 
         val raw = when (val r = provider.chat(model, system, turns)) {
             is AiResult.Success -> r.value
             is AiResult.Failure -> { fail(r.message, if (r.kind == FailureKind.NETWORK) AssistantState.Offline else AssistantState.Error); return }
         }
-        val parsed = parseReply(raw)
+        val parsedRaw = parseReply(raw)
+        val repetition = collapseRepetition(parsedRaw.text)
+        val parsed = parsedRaw.copy(text = repetition.text)
+        if (parsed.text.isBlank() && parsed.actions.isEmpty()) {
+            fail("${providerId.shortName} returned an empty reply (model $model). Tap Retry or choose another model.")
+            return
+        }
         if (parsed.text.isNotBlank()) record(ChatRole.ASSISTANT, parsed.text)
+        if (repetition.degenerate) {
+            note("⚠️ The reply from model \"$model\" was repeating itself, so the repeats were removed. A recommended model in Settings usually fixes this.")
+        }
 
         val speak = fromVoice || s.autoSpeakReplies
         if (speak && parsed.text.isNotBlank()) say(parsed.text)
@@ -314,13 +344,15 @@ class AssistantEngine(
         val s = settings.value
         when {
             !s.memoryEnabled -> report(action, ActionStatus.BLOCKED, "Memory is turned off in Settings, so nothing was saved.")
-            looksSensitive(action.text) -> report(action, ActionStatus.BLOCKED, "Not saved: this looks like a password, PIN, OTP, card number or key.")
-            else -> {
-                val d = ask(PendingRequest(PendingRequest.Kind.CONFIRM, "Remember this?", action.text))
-                if (d !is Decision.Approve) report(action, ActionStatus.CANCELLED, "Not saved.")
-                else {
-                    val saved = runCatching { memories.add(action.text) }.isSuccess
-                    report(action, if (saved) ActionStatus.SUCCESS else ActionStatus.FAILED, if (saved) "Saved to memory: \"${action.text}\"" else "Could not save the memory.")
+            else -> when (val check = validateMemory(action.text, runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()))) {
+                is MemoryCheck.Rejected -> report(action, ActionStatus.BLOCKED, check.reason)
+                is MemoryCheck.Ok -> {
+                    val d = ask(PendingRequest(PendingRequest.Kind.CONFIRM, "Remember this?", check.text))
+                    if (d !is Decision.Approve) report(action, ActionStatus.CANCELLED, "Not saved.")
+                    else {
+                        val saved = runCatching { memories.add(check.text) }.isSuccess
+                        report(action, if (saved) ActionStatus.SUCCESS else ActionStatus.FAILED, if (saved) "Saved to memory: \"${check.text}\"" else "Could not save the memory.")
+                    }
                 }
             }
         }
@@ -332,7 +364,7 @@ class AssistantEngine(
             report(action, ActionStatus.FAILED, "Web search needs a Tavily API key (Settings → Web search).")
             return
         }
-        val response = when (val r = searchFor(key).search(action.query)) {
+        val response = when (val r = searchFor(key).search(action.query, topic = action.topic)) {
             is AiResult.Success -> r.value
             is AiResult.Failure -> { report(action, ActionStatus.FAILED, "Web search failed: ${r.message}"); return }
         }
@@ -343,9 +375,11 @@ class AssistantEngine(
         actionLog.safeLog(action, ActionStatus.SUCCESS, "${response.results.size} results")
         _state.value = AssistantState.Thinking
         val followUp = buildSearchFollowUp(action.query, response.results.map { it.title to it.url }, response.results.map { it.snippet }, response.answer)
-        val turns = toTurns(_transcript.value, settings.value.historyLimit * 2) +
+        val turns = toTurns(_transcript.value, settings.value.historyLimit * 2, ModelAdvice.historyCharBudget(model)) +
             com.raju.aiassistant.domain.ai.Turn(com.raju.aiassistant.domain.ai.TurnRole.USER, followUp)
-        val sources = response.results.mapIndexed { i, r -> "[${i + 1}] ${r.title}\n${r.url}" }.joinToString("\n")
+        val sources = response.results.mapIndexed { i, r ->
+            "[${i + 1}] ${r.title} — ${r.domain}" + (r.publishedDate?.let { " ($it)" } ?: "") + "\n${r.url}"
+        }.joinToString("\n")
         when (val r = provider.chat(model, system, turns)) {
             is AiResult.Success -> {
                 val summary = parseReply(r.value).text // actions in follow-ups are ignored on purpose

@@ -17,11 +17,14 @@ import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-data class SearchResult(val title: String, val url: String, val snippet: String)
+data class SearchResult(val title: String, val url: String, val snippet: String, val publishedDate: String? = null) {
+    /** Host name shown next to a source, e.g. "timesofindia.com". */
+    val domain: String get() = url.substringAfter("://").substringBefore('/').removePrefix("www.")
+}
 data class SearchResponse(val answer: String?, val results: List<SearchResult>)
 
 interface WebSearch {
-    suspend fun search(query: String, maxResults: Int = 5): AiResult<SearchResponse>
+    suspend fun search(query: String, maxResults: Int = 5, topic: String? = null): AiResult<SearchResponse>
 }
 
 /** Real web search through the Tavily API. Results are returned as-is; nothing is fabricated. */
@@ -30,12 +33,13 @@ class TavilyClient(
     private val apiKey: String,
     private val baseUrl: String = "https://api.tavily.com",
 ) : WebSearch {
-    override suspend fun search(query: String, maxResults: Int): AiResult<SearchResponse> = withRetry {
+    override suspend fun search(query: String, maxResults: Int, topic: String?): AiResult<SearchResponse> = withRetry {
         val payload = buildJsonObject {
             put("query", query.take(400))
             put("max_results", maxResults)
             put("include_answer", true)
             put("search_depth", "basic")
+            if (topic != null) put("topic", topic) // "news" adds published_date to results
         }
         val request = Request.Builder()
             .url("$baseUrl/search")
@@ -62,6 +66,7 @@ class TavilyClient(
                 title = (o["title"] as? JsonPrimitive)?.contentOrNull ?: url,
                 url = url,
                 snippet = (o["content"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                publishedDate = (o["published_date"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() },
             )
         }
         val answer = (root["answer"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }

@@ -19,7 +19,8 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
   - Find contacts and call. Every call is confirmed first; the dialer opens by default, and direct calling is optional.
   - Open installed apps, settings pages and battery status.
   - Action history with the real result of each action.
-- **WhatsApp & notifications:** opt-in Notification Access. Raju AI announces the sender and preview for the apps you choose, never twice for the same notification. Message content is never logged. WhatsApp drafts open in WhatsApp for *you* to send.
+- **Incoming calls (opt-in):** after you give Raju AI Android's "call screening" role, it says who is calling: the name from Contacts, or "unknown number". It never blocks, answers or records calls.
+- **WhatsApp & notifications:** **asks first**: "WhatsApp par Mom ka message aaya hai. Kya main padhkar sunaun?" It reads the preview only after you tap **Read** (in the app or on its notification). opt-in Notification Access. Raju AI announces the sender and preview for the apps you choose, never twice for the same notification. Message content is never logged. WhatsApp drafts open in WhatsApp for *you* to send.
 - **Web search:** Tavily, summarised with numbered sources and tappable links. Website text is treated as untrusted data.
 - **Music:** YouTube Music or Spotify via Android intents, with a website fallback if the app is missing.
 - **Memory:** the assistant remembers only facts you approve. You can view, edit and delete them in Tools. Passwords, PINs, OTPs, card numbers and keys are refused.
@@ -59,15 +60,30 @@ There is **no backend**. Keys are encrypted with an Android Keystore key (AES-25
 | Contacts | First "call X" / WhatsApp to X | Assistant says it couldn't look up the contact |
 | Phone (CALL_PHONE) | Only if you enable *Direct calling* | Dialer opens instead |
 | Notification access | Settings → Notifications → Enable (system screen) | No announcements |
+| App notifications (POST_NOTIFICATIONS) | When you turn on announcements (Android 13+) | Read/Skip shown only inside the app |
+| Call-screening role | When you turn on "Announce incoming calls" (Android 10+) | No call announcements |
 
 Manage these anytime: Settings → **Manage app permissions**. On Samsung phones, also set **Settings → Apps → Raju AI → Battery → Unrestricted** if announcements stop in the background.
 
 ## Troubleshooting
+- **Notification access switch is greyed out / won't turn on:** this happens to apps installed from an APK file (Android 13+ "restricted settings"). Fix: open App info (Raju AI Settings → Status & permissions → **Open App info**), tap **⋮** (top-right), choose **Allow restricted settings**, confirm with your PIN, then switch Notification access on again. On some phones the ⋮ option appears only after you first try the greyed-out switch once.
+- **Strange, repeated or Arabic-looking replies:** you are probably using Groq `allam-2-7b` (an Arabic–English model). In Settings, open Groq → Model → **Change** and pick a model marked ★ recommended (for example `llama-3.3-70b-versatile`).
 - **"API key was rejected"**: re-copy the key, and check that the Gemini API is enabled for that key.
 - **"Too many requests" / "Quota exceeded"**: wait a moment, or check your provider's plan.
 - **Voice does nothing**: install or enable *Speech Recognition & Synthesis by Google* (Play Store), and allow the microphone.
 - **Android voice sounds English**: install Hindi voice data in *Settings → General management → Text-to-speech*, then pick a voice in Raju AI Settings → Voice.
 - **Gradle JVM error**: use JVM 21 (File → Settings → Build Tools → Gradle → Gradle JDK).
+
+## Phone test checklist
+1. Settings → Status & permissions: every row should show the real state. Allow the microphone, contacts and app notifications.
+2. Notification access → enable Raju AI (use the restricted-settings tip if needed). The row should say "on and connected".
+3. Turn on "Announce notifications" and WhatsApp. Send yourself a WhatsApp message: you should hear only *who* wrote. Tap **Read** to hear it, and **Skip** to check that it is not read.
+4. Hide previews in WhatsApp and test again: you should hear "Preview chhupa hua hai".
+5. Turn on "Announce incoming calls" → grant the call-screening role. Call from another phone, first a saved contact, then an unknown number.
+6. Settings → Voice → **Test voice**. Check the "Android voice (Hindi)" status row.
+7. Tavily key → Test. In chat ask: "आज की ताज़ा खबरें खोजो और स्रोत लिंक दो". Real links should open.
+8. Ask it to remember a safe preference, restart the app, ask again, then delete the memory in Tools.
+9. Turn on airplane mode: the app must say offline/failed, never "searched" or "connected".
 
 ## Known Android restrictions
 - No hidden or always-on background listening. The microphone works only while you're using voice in the app, with the system mic indicator visible.
