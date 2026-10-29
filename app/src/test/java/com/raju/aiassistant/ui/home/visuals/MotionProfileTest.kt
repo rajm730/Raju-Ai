@@ -23,6 +23,6 @@ class MotionProfileTest {
         assertTrue(low.animate)
         assertEquals(30, low.maxFps)
         assertTrue(low.particleCount < normal.particleCount)
-        assertFalse(low.scanlines)
+        assertFalse(low.richEffects)
     }
 }

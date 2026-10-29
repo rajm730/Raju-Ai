@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,7 +57,6 @@ import com.raju.aiassistant.domain.model.AssistantState
 import com.raju.aiassistant.ui.RajuViewModelFactory
 import com.raju.aiassistant.ui.components.StatusChip
 import com.raju.aiassistant.ui.home.visuals.ArcReactor
-import com.raju.aiassistant.ui.home.visuals.HologramAvatar
 import com.raju.aiassistant.ui.home.visuals.motionProfileFor
 import com.raju.aiassistant.ui.home.visuals.reactorStyleFor
 import com.raju.aiassistant.ui.home.visuals.rememberAnimationTime
@@ -89,7 +86,7 @@ fun HomeScreen(
     val timeProvider = { time.floatValue }
 
     // Real speech level arrives from TTS in Phase 4. In "Speaking" preview we animate a
-    // synthetic level purely so the lip-sync visuals can be checked.
+    // synthetic level purely so the speech-reactive visuals can be checked.
     val speechLevel = {
         if (state.previewState == AssistantState.Speaking) {
             val t = time.floatValue
@@ -119,40 +116,24 @@ fun HomeScreen(
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
                 StatusChip("Mic: off", TextSecondary)
                 StatusChip(
-                    label = if (state.providerKeySaved) "${state.defaultProvider.displayName}: key saved"
-                    else "${state.defaultProvider.displayName}: no key",
+                    label = if (state.providerKeySaved) "${state.defaultProvider.shortName}: key saved"
+                    else "${state.defaultProvider.shortName}: no key",
                     color = if (state.providerKeySaved) SuccessGreen else WarningAmber,
                 )
             }
 
-            // Stage: hologram + reactor
+            // Stage: one large, centred, heart-beating reactor
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .semantics { contentDescription = "Assistant status: ${assistantState.label}" },
+                contentAlignment = Alignment.Center,
             ) {
-                if (maxWidth > maxHeight) {
-                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                        HologramAvatar(assistantState, style, profile.scanlines, timeProvider, speechLevel, Modifier.weight(1f).fillMaxHeight())
-                        ArcReactor(style, profile.particleCount, timeProvider, speechLevel, Modifier.weight(1f).aspectRatio(1f))
-                    }
-                } else {
-                    HologramAvatar(
-                        assistantState, style, profile.scanlines, timeProvider, speechLevel,
-                        Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.82f)
-                            .align(Alignment.TopCenter),
-                    )
-                    val reactorSize = minOf(maxWidth * 0.62f, maxHeight * 0.45f)
-                    ArcReactor(
-                        style, profile.particleCount, timeProvider, speechLevel,
-                        Modifier
-                            .size(reactorSize)
-                            .align(Alignment.BottomCenter),
-                    )
-                }
+                ArcReactor(
+                    style, profile.particleCount, profile.richEffects, timeProvider, speechLevel,
+                    Modifier.size(minOf(maxWidth, maxHeight) * 0.96f),
+                )
             }
 
             Text(

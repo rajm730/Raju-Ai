@@ -3,18 +3,18 @@ package com.raju.aiassistant.ui.home.visuals
 import com.raju.aiassistant.domain.model.AssistantState
 
 /**
- * How the Arc Reactor and hologram look for a given [AssistantState].
+ * How the Arc Reactor looks for a given [AssistantState].
  * Pure data (ARGB longs, no Compose types) so the mapping is unit-testable.
  */
 data class ReactorStyle(
-    val primaryArgb: Long,
-    val secondaryArgb: Long,
+    /** [PALETTE_SIZE] colours of the rotating sweep gradient (first colour is also the main tint). */
+    val paletteArgb: List<Long>,
     /** 0..1 strength of the outer glow. */
     val glow: Float,
     /** Outer ring speed in revolutions per second (0 = still). */
     val rotationSpeed: Float,
-    /** Core pulse frequency in Hz. */
-    val pulseHz: Float,
+    /** Heartbeat rate in beats per minute. */
+    val bpm: Float,
     /** Expanding sound-wave ripples (listening). */
     val ripples: Boolean = false,
     /** Fast spinning arc (thinking). */
@@ -23,27 +23,35 @@ data class ReactorStyle(
     val sweep: Boolean = false,
     /** Irregular brightness flicker (error). */
     val flicker: Boolean = false,
-    /** Core brightness follows speech level (speaking). */
+    /** Beat follows the speech level instead of the heartbeat (speaking). */
     val speechReactive: Boolean = false,
-)
+) {
+    val primaryArgb: Long get() = paletteArgb.first()
+}
+
+const val PALETTE_SIZE = 5
 
 private const val CYAN = 0xFF00E5FF
-private const val BLUE = 0xFF4FC3F7
+private const val BLUE = 0xFF2979FF
 private const val VIOLET = 0xFF9A7BFF
+private const val MAGENTA = 0xFFFF4FD8
+private const val TEAL = 0xFF1DE9B6
 private const val GREEN = 0xFF4CE0A0
 private const val AMBER = 0xFFFFC857
+private const val ORANGE = 0xFFFF8A3D
 private const val RED = 0xFFFF5C7A
 private const val GREY = 0xFF5D7083
+private const val GREY_LIGHT = 0xFF8FA9BF
 
 fun reactorStyleFor(state: AssistantState): ReactorStyle = when (state) {
-    AssistantState.Idle -> ReactorStyle(CYAN, BLUE, glow = 0.55f, rotationSpeed = 0.05f, pulseHz = 0.4f)
-    AssistantState.Listening -> ReactorStyle(CYAN, 0xFFB2FFFF, glow = 0.8f, rotationSpeed = 0.08f, pulseHz = 0.9f, ripples = true)
-    AssistantState.Thinking -> ReactorStyle(VIOLET, CYAN, glow = 0.7f, rotationSpeed = 0.25f, pulseHz = 1.4f, spinner = true)
-    AssistantState.Speaking -> ReactorStyle(CYAN, VIOLET, glow = 0.85f, rotationSpeed = 0.1f, pulseHz = 0f, speechReactive = true)
-    AssistantState.Executing -> ReactorStyle(AMBER, CYAN, glow = 0.7f, rotationSpeed = 0.18f, pulseHz = 1.0f, sweep = true)
-    AssistantState.Success -> ReactorStyle(GREEN, CYAN, glow = 0.75f, rotationSpeed = 0.06f, pulseHz = 0.5f)
-    AssistantState.Error -> ReactorStyle(RED, AMBER, glow = 0.6f, rotationSpeed = 0.02f, pulseHz = 2.0f, flicker = true)
-    AssistantState.Offline -> ReactorStyle(GREY, GREY, glow = 0.15f, rotationSpeed = 0f, pulseHz = 0.2f)
+    AssistantState.Idle -> ReactorStyle(listOf(CYAN, BLUE, VIOLET, MAGENTA, CYAN), glow = 0.7f, rotationSpeed = 0.06f, bpm = 64f)
+    AssistantState.Listening -> ReactorStyle(listOf(CYAN, TEAL, GREEN, BLUE, CYAN), glow = 0.85f, rotationSpeed = 0.09f, bpm = 76f, ripples = true)
+    AssistantState.Thinking -> ReactorStyle(listOf(VIOLET, MAGENTA, BLUE, CYAN, VIOLET), glow = 0.8f, rotationSpeed = 0.25f, bpm = 96f, spinner = true)
+    AssistantState.Speaking -> ReactorStyle(listOf(CYAN, VIOLET, MAGENTA, BLUE, CYAN), glow = 0.9f, rotationSpeed = 0.12f, bpm = 72f, speechReactive = true)
+    AssistantState.Executing -> ReactorStyle(listOf(AMBER, ORANGE, MAGENTA, CYAN, AMBER), glow = 0.8f, rotationSpeed = 0.18f, bpm = 90f, sweep = true)
+    AssistantState.Success -> ReactorStyle(listOf(GREEN, TEAL, CYAN, BLUE, GREEN), glow = 0.85f, rotationSpeed = 0.07f, bpm = 68f)
+    AssistantState.Error -> ReactorStyle(listOf(RED, ORANGE, MAGENTA, ORANGE, RED), glow = 0.7f, rotationSpeed = 0.03f, bpm = 112f, flicker = true)
+    AssistantState.Offline -> ReactorStyle(listOf(GREY, GREY_LIGHT, GREY, GREY_LIGHT, GREY), glow = 0.2f, rotationSpeed = 0f, bpm = 40f)
 }
 
 /** Short bilingual hint shown under the reactor. */

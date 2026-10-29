@@ -24,7 +24,7 @@ data class ToolModule(val name: String, val description: String, val phase: Int,
 val toolModules = listOf(
     ToolModule("Secure key storage", "API keys encrypted with Android Keystore.", 1, available = true),
     ToolModule("Chat history", "Conversations stored locally with Room.", 1, available = true),
-    ToolModule("Arc Reactor + 2D hologram", "Animated home screen with state visuals (3D needs a licensed model).", 2, available = true),
+    ToolModule("Arc Reactor", "Colourful heart-beating reactor with a look for every assistant state.", 2, available = true),
     ToolModule("AI chat (Gemini / Grok)", "Real provider responses, model selection, connection tests.", 3, available = false),
     ToolModule("Voice", "Speech recognition, female TTS, stop/interrupt.", 4, available = false),
     ToolModule("Phone tools", "Contacts, calls via dialer, open apps, permissions.", 5, available = false),

@@ -3,9 +3,9 @@ package com.raju.aiassistant.domain.ai
 import com.raju.aiassistant.domain.model.ChatMessage
 
 /** Identifies an AI backend. New providers (e.g. OpenAI) are added here plus an adapter. */
-enum class ProviderId(val displayName: String) {
-    GEMINI("Google Gemini"),
-    GROK("xAI Grok"),
+enum class ProviderId(val displayName: String, val shortName: String) {
+    GEMINI("Google Gemini", "Gemini"),
+    GROK("xAI Grok", "Grok"),
 }
 
 data class AiModel(val id: String, val displayName: String)

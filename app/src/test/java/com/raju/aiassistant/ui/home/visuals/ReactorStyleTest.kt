@@ -29,6 +29,17 @@ class ReactorStyleTest {
     }
 
     @Test
+    fun everyPaletteHasTheExpectedSize() {
+        AssistantState.entries.forEach { assertEquals(PALETTE_SIZE, reactorStyleFor(it).paletteArgb.size) }
+    }
+
+    @Test
+    fun reactorBeatsFasterWhenBusy() {
+        assertTrue(reactorStyleFor(AssistantState.Thinking).bpm > reactorStyleFor(AssistantState.Idle).bpm)
+        assertTrue(reactorStyleFor(AssistantState.Offline).bpm < reactorStyleFor(AssistantState.Idle).bpm)
+    }
+
+    @Test
     fun everyStateHasAHint() {
         AssistantState.entries.forEach { assertTrue(statusHintFor(it).isNotBlank()) }
     }

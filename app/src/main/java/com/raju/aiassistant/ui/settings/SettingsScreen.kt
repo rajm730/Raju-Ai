@@ -114,7 +114,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
 
         HudPanel(title = "About") {
             Text("Raju AI Assistant ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-            Text("Phase 2 build: animated home screen (Arc Reactor + 2D hologram).", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            Text("Phase 2 build: animated heart-beating Arc Reactor home screen.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
     }
 

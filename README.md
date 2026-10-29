@@ -58,7 +58,7 @@ Create your own keystore in Android Studio (**Build → Generate Signed App Bund
 ## Roadmap
 
 1. ✅ Architecture & navigation shell
-2. ✅ Futuristic home UI, animated Arc Reactor, 2D animated hologram fallback (3D only with a licensed model you provide)
+2. ✅ Futuristic home UI with a colourful, heart-beating Arc Reactor
 3. Gemini / Grok adapters, real chat, model list, connection tests
 4. Speech input, female TTS, stop/interrupt
 5. Contacts, calling via dialer, app launching, permissions

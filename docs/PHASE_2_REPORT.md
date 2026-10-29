@@ -1,4 +1,4 @@
-# Phase 2 Report — Futuristic Home UI, Arc Reactor, 2D Hologram
+# Phase 2 Report — Futuristic Home UI, Arc Reactor
 
 ## Implemented
 - **Animated Arc Reactor** (`ui/home/visuals/ArcReactor.kt`, original design, Canvas): outer glow, rotating
@@ -31,3 +31,13 @@
 - Full Android build/APK, and a visual render check: `dl.google.com` (Android SDK + Google Maven) is blocked
   by this environment's network policy. Please build in Android Studio and send any errors or a screenshot.
 - Frame rate and battery on a real Galaxy A14: not measured yet (Phase 9).
+
+## Update after device test (Galaxy A14)
+- App built and ran on the user's Samsung SM-A146B from Android Studio.
+- On request, the 2D hologram face was **removed**. The home screen now shows one large, centred reactor.
+- Reactor redesigned: multi-colour rotating sweep-gradient rings (palette changes per state), an extra outer
+  dashed ring, and a **heart-like "lub-dub" beat** (per-state BPM: Idle 64, Listening 76, Thinking 96,
+  Executing 90, Error 112, Offline 40). The reactor swells and sends a shock-wave ring on every beat.
+  Speaking follows the speech level instead (real TTS in Phase 4).
+- Low-power mode drops the shock-waves/outer ring and uses fewer particles at 30 fps.
+- Unit tests: 20/20 passed (new `ReactorMathTest`).
