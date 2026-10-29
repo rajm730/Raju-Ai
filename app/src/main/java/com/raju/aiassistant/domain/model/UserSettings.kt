@@ -1,0 +1,53 @@
+package com.raju.aiassistant.domain.model
+
+import com.raju.aiassistant.domain.ai.ProviderId
+
+enum class TtsEngine(val label: String) { SARVAM("Sarvam AI (cloud)"), ANDROID("Android TTS (offline)") }
+
+enum class MusicService(val label: String) { YOUTUBE_MUSIC("YouTube Music"), SPOTIFY("Spotify") }
+
+/** Apps whose notifications can be announced. */
+enum class AnnounceApp(val packageName: String, val label: String) {
+    WHATSAPP("com.whatsapp", "WhatsApp"),
+    WHATSAPP_BUSINESS("com.whatsapp.w4b", "WhatsApp Business"),
+    TELEGRAM("org.telegram.messenger", "Telegram"),
+    GOOGLE_MESSAGES("com.google.android.apps.messaging", "Google Messages"),
+    SAMSUNG_MESSAGES("com.samsung.android.messaging", "Samsung Messages"),
+}
+
+/** Result of the last real connection test for a provider. */
+data class ConnectionTest(val success: Boolean, val message: String, val timestamp: Long)
+
+/** Non-secret user preferences (persisted in DataStore). */
+data class UserSettings(
+    val defaultProvider: ProviderId = ProviderId.GEMINI,
+    val models: Map<ProviderId, String> = emptyMap(),
+    val lastTests: Map<ProviderId, ConnectionTest> = emptyMap(),
+    val lowPowerMode: Boolean = false,
+    val reducedMotion: Boolean = false,
+    val saveHistory: Boolean = true,
+    val historyLimit: Int = 20,
+    val ttsEngine: TtsEngine = TtsEngine.SARVAM,
+    val sarvamSpeaker: String = SARVAM_FEMALE_SPEAKERS.first(),
+    val speechRate: Float = 1.0f,
+    val androidVoice: String? = null,
+    val speechLanguage: String = "hi-IN",
+    val autoSpeakReplies: Boolean = true,
+    val continuousConversation: Boolean = false,
+    val announceNotifications: Boolean = false,
+    val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),
+    val directCalling: Boolean = false,
+    val musicService: MusicService = MusicService.YOUTUBE_MUSIC,
+    val memoryEnabled: Boolean = true,
+    val safetyMode: Boolean = false,
+    val assistantPaused: Boolean = false,
+) {
+    fun modelFor(provider: ProviderId): String? = models[provider]
+
+    /** Notification announcements are allowed right now. */
+    val announcementsActive: Boolean get() = announceNotifications && !assistantPaused && !safetyMode
+}
+
+/** Female voices offered by Sarvam Bulbul v2 (from Sarvam's API documentation). */
+val SARVAM_FEMALE_SPEAKERS = listOf("anushka", "manisha", "vidya", "arya")
+val SPEECH_LANGUAGES = listOf("hi-IN" to "Hindi / Hinglish", "en-IN" to "English (India)")

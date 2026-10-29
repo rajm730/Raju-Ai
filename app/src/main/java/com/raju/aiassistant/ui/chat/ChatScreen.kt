@@ -1,0 +1,187 @@
+package com.raju.aiassistant.ui.chat
+
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.raju.aiassistant.domain.assistant.isSafeWebUrl
+import com.raju.aiassistant.domain.model.AssistantState
+import com.raju.aiassistant.domain.model.ChatMessage
+import com.raju.aiassistant.domain.model.ChatRole
+import com.raju.aiassistant.ui.RajuViewModelFactory
+import com.raju.aiassistant.ui.theme.ReactorBlue
+import com.raju.aiassistant.ui.theme.TextSecondary
+
+@Composable
+fun ChatScreen(
+    onOpenSettings: () -> Unit,
+    viewModel: ChatViewModel = viewModel(factory = RajuViewModelFactory),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var input by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val busy = state.state.isBusy
+
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startVoice()
+    }
+
+    LaunchedEffect(state.messages.size) {
+        if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .imePadding()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Chat · ${state.providerName}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            TextButton(onClick = onOpenSettings) { Text("Settings") }
+        }
+        if (!state.historyEnabled) {
+            Text("History is off — this chat is not saved.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.messages.isEmpty()) {
+                item {
+                    Text(
+                        "Namaste! Kuch bhi poochhiye — Hindi, Hinglish ya English mein.\nTry: \"Mom ko call karo\", \"Kesariya bajao\", \"Aaj Delhi ka mausam?\"",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextSecondary,
+                    )
+                }
+            }
+            items(state.messages, key = { it.id }) { MessageBubble(it) }
+            if (state.state == AssistantState.Thinking || state.state == AssistantState.Executing) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(if (state.state == AssistantState.Thinking) "Thinking…" else "Working on it…", color = TextSecondary)
+                    }
+                }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Type a message…") },
+                maxLines = 4,
+            )
+            if (busy) {
+                FilledTonalIconButton(onClick = viewModel::stop) { Icon(Icons.Filled.Stop, contentDescription = "Stop") }
+            } else {
+                FilledTonalIconButton(onClick = {
+                    if (viewModel.hasMicPermission()) viewModel.startVoice() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }) { Icon(Icons.Filled.Mic, contentDescription = "Speak") }
+            }
+            FilledIconButton(
+                onClick = { viewModel.send(input); input = "" },
+                enabled = input.isNotBlank(),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+            }
+        }
+    }
+}
+
+private val URL_REGEX = Regex("""https?://[^\s)\]]+""")
+
+/** Turns safe http(s) URLs into tappable links. */
+private fun linkify(text: String): AnnotatedString = buildAnnotatedString {
+    var last = 0
+    for (m in URL_REGEX.findAll(text)) {
+        append(text.substring(last, m.range.first))
+        val url = m.value.trimEnd('.', ',')
+        if (isSafeWebUrl(url)) {
+            withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = ReactorBlue, textDecoration = TextDecoration.Underline)))) { append(url) }
+            append(m.value.substring(url.length))
+        } else {
+            append(m.value)
+        }
+        last = m.range.last + 1
+    }
+    append(text.substring(last))
+}
+
+@Composable
+private fun MessageBubble(message: ChatMessage) {
+    if (message.role == ChatRole.SYSTEM) {
+        Text(
+            message.text,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            textAlign = TextAlign.Center,
+        )
+        return
+    }
+    val isUser = message.role == ChatRole.USER
+    Box(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            modifier = Modifier.widthIn(max = 320.dp),
+        ) {
+            Text(linkify(message.text), Modifier.padding(12.dp), style = MaterialTheme.typography.bodyLarge, color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}

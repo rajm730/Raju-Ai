@@ -1,0 +1,26 @@
+# Gradle / build
+.gradle/
+build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.DS_Store
+local.properties
+
+# Secrets & signing — never commit these
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+secrets.properties
+*.env
+.env*
+google-services.json
+
+# Logs
+*.log
