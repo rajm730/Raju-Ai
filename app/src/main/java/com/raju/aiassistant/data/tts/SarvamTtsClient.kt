@@ -22,7 +22,8 @@ class SarvamTtsClient(
     private val http: OkHttpClient,
     private val apiKey: String,
     private val baseUrl: String = "https://api.sarvam.ai",
-    private val model: String = "bulbul:v2",
+    // bulbul:v2 was retired by Sarvam (HTTP 400 "deprecated"). v3 has its own speaker list and no pitch/loudness.
+    private val model: String = "bulbul:v3",
 ) {
     suspend fun synthesize(text: String, speaker: String, languageCode: String, pace: Float): AiResult<ByteArray> = withRetry {
         val payload = buildJsonObject {

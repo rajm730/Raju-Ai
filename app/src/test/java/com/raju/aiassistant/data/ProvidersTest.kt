@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import com.raju.aiassistant.domain.model.validSarvamSpeaker
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -124,12 +125,13 @@ class ProvidersTest {
     fun sarvamDecodesAudio() = runBlocking {
         val audio = byteArrayOf(1, 2, 3)
         enqueue(200, """{"request_id":"x","audios":["${Base64.getEncoder().encodeToString(audio)}"]}""")
-        val r = SarvamTtsClient(http, "sk", url).synthesize("Namaste", "anushka", "hi-IN", 1f) as AiResult.Success
+        val r = SarvamTtsClient(http, "sk", url).synthesize("Namaste", "priya", "hi-IN", 1f) as AiResult.Success
         assertTrue(r.value.contentEquals(audio))
         val req = server.takeRequest()
         assertEquals("sk", req.getHeader("api-subscription-key"))
         val sent = req.body.readUtf8()
-        assertTrue(sent.contains("\"speaker\":\"anushka\""))
+        assertTrue(sent.contains("\"speaker\":\"priya\""))
+        assertTrue(sent.contains("\"model\":\"bulbul:v3\""))
         assertTrue(sent.contains("\"enable_preprocessing\":true"))
     }
 
@@ -142,5 +144,12 @@ class ProvidersTest {
         val q = OpenAiCompatibleProvider(ProviderId.GROQ, http, "k", url).chat("m", "s", listOf(Turn(TurnRole.USER, "hi"))) as AiResult.Success
         assertTrue(q.value.contains("कट गया"))
         server.takeRequest(); assertTrue(server.takeRequest().body.readUtf8().contains("\"max_tokens\":4096"))
+    }
+
+    @Test
+    fun oldBulbulV2VoiceFallsBackToV3Default() {
+        assertEquals("priya", validSarvamSpeaker("anushka"))
+        assertEquals("priya", validSarvamSpeaker(null))
+        assertEquals("kavya", validSarvamSpeaker("kavya"))
     }
 }
