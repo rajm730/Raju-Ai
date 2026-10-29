@@ -17,7 +17,7 @@ private fun CreationExtras.container(): AppContainer =
 val RajuViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
     initializer {
         val c = container()
-        HomeViewModel(c.secureKeyStore, c.settingsRepository)
+        HomeViewModel(c.secureKeyStore, c.settingsRepository, c.connectivityObserver.isOnline)
     }
     initializer {
         val c = container()

@@ -7,7 +7,7 @@ Personal AI assistant for Android — Kotlin + Jetpack Compose + Material 3.
 | Package | `com.raju.aiassistant` (debug build: `com.raju.aiassistant.debug`) |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
 | Build | Gradle 8.11.1 (wrapper), AGP 8.7.3, Kotlin 2.0.21, JDK 17+ |
-| Current status | **Phase 1 — architecture & navigation shell** (see `docs/PHASE_1_REPORT.md`) |
+| Current status | **Phase 2 — animated home screen** (see `docs/PHASE_2_REPORT.md`) |
 
 ## Build in Android Studio (सीधे बिल्ड करने के स्टेप्स)
 
@@ -58,7 +58,7 @@ Create your own keystore in Android Studio (**Build → Generate Signed App Bund
 ## Roadmap
 
 1. ✅ Architecture & navigation shell
-2. Futuristic home UI, animated Arc Reactor, 2D animated hologram fallback (3D only with a licensed model you provide)
+2. ✅ Futuristic home UI, animated Arc Reactor, 2D animated hologram fallback (3D only with a licensed model you provide)
 3. Gemini / Grok adapters, real chat, model list, connection tests
 4. Speech input, female TTS, stop/interrupt
 5. Contacts, calling via dialer, app launching, permissions

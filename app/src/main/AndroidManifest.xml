@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Phase 1 only needs network access (for later AI / search calls).
+    <!-- Only network permissions so far (for later AI / search calls).
          Microphone, contacts, phone and notification permissions are added
          in their own phases and requested at runtime only when used. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Normal (install-time) permission: lets the home screen show a real Offline state. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".RajuApp"

@@ -1,6 +1,7 @@
 package com.raju.aiassistant.di
 
 import android.content.Context
+import com.raju.aiassistant.core.network.ConnectivityObserver
 import com.raju.aiassistant.core.security.SecureKeyStore
 import com.raju.aiassistant.data.db.RajuDatabase
 import com.raju.aiassistant.data.prefs.SettingsRepository
@@ -18,4 +19,5 @@ class AppContainer(context: Context) {
     val secureKeyStore by lazy { SecureKeyStore(appContext) }
     val settingsRepository by lazy { SettingsRepository(appContext) }
     val conversationRepository by lazy { ConversationRepository(database.chatDao()) }
+    val connectivityObserver by lazy { ConnectivityObserver(appContext) }
 }
