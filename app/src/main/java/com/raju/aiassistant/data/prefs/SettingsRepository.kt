@@ -15,6 +15,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.raju.aiassistant.domain.ai.ProviderId
 import com.raju.aiassistant.domain.model.ConnectionTest
 import com.raju.aiassistant.domain.model.MusicService
+import com.raju.aiassistant.domain.model.Personality
 import com.raju.aiassistant.domain.model.SttEngine
 import com.raju.aiassistant.domain.model.TtsEngine
 import com.raju.aiassistant.domain.model.UserSettings
@@ -60,6 +61,8 @@ class SettingsRepository(private val context: Context) {
             speechLanguage = this[Keys.SPEECH_LANGUAGE] ?: d.speechLanguage,
             autoSpeakReplies = this[Keys.AUTO_SPEAK] ?: d.autoSpeakReplies,
             continuousConversation = this[Keys.CONTINUOUS] ?: d.continuousConversation,
+            autoListen = this[Keys.AUTO_LISTEN] ?: d.autoListen,
+            personality = enumOr(this[Keys.PERSONALITY], d.personality),
             announceNotifications = this[Keys.ANNOUNCE] ?: d.announceNotifications,
             announceApps = this[Keys.ANNOUNCE_APPS] ?: d.announceApps,
             askBeforeReading = this[Keys.ASK_BEFORE_READING] ?: d.askBeforeReading,
@@ -100,6 +103,8 @@ class SettingsRepository(private val context: Context) {
     suspend fun setSpeechLanguage(v: String) = edit { it[Keys.SPEECH_LANGUAGE] = v }
     suspend fun setAutoSpeak(v: Boolean) = edit { it[Keys.AUTO_SPEAK] = v }
     suspend fun setContinuous(v: Boolean) = edit { it[Keys.CONTINUOUS] = v }
+    suspend fun setAutoListen(v: Boolean) = edit { it[Keys.AUTO_LISTEN] = v }
+    suspend fun setPersonality(v: Personality) = edit { it[Keys.PERSONALITY] = v.name }
     suspend fun setAnnounce(v: Boolean) = edit { it[Keys.ANNOUNCE] = v }
     suspend fun setAnnounceApp(pkg: String, enabled: Boolean) = edit {
         val current = it[Keys.ANNOUNCE_APPS] ?: UserSettings().announceApps
@@ -151,6 +156,8 @@ class SettingsRepository(private val context: Context) {
         val SPEECH_LANGUAGE = stringPreferencesKey("speech_language")
         val AUTO_SPEAK = booleanPreferencesKey("auto_speak")
         val CONTINUOUS = booleanPreferencesKey("continuous_conversation")
+        val AUTO_LISTEN = booleanPreferencesKey("auto_listen")
+        val PERSONALITY = stringPreferencesKey("personality")
         val ANNOUNCE = booleanPreferencesKey("announce_notifications")
         val ANNOUNCE_APPS = stringSetPreferencesKey("announce_apps")
         val DIRECT_CALLING = booleanPreferencesKey("direct_calling")

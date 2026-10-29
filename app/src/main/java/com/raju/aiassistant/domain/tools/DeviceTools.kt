@@ -36,7 +36,8 @@ interface DeviceTools {
     fun mediaControl(command: MediaCommand): ToolOutcome = ToolOutcome.Failed("Media control is not supported here.")
     fun hasPermission(permission: String): Boolean = true
     fun sendSms(contact: Contact, text: String): ToolOutcome = ToolOutcome.Failed("SMS is not supported here.")
-    fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome =
+    /** [rrule] is an iCalendar repeat rule such as "FREQ=DAILY", or null for a one-time event. */
+    fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?, rrule: String?): ToolOutcome =
         ToolOutcome.Failed("Calendar is not supported here.")
     fun navigate(destination: String, mode: TravelMode): ToolOutcome = ToolOutcome.Failed("Navigation is not supported here.")
     fun copyToClipboard(text: String): ToolOutcome = ToolOutcome.Failed("Clipboard is not supported here.")

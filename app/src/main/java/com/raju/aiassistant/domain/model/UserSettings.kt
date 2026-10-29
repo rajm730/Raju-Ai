@@ -15,6 +15,13 @@ enum class TtsEngine(val label: String, val hint: String) {
     ANDROID("Android TTS (offline)", "Free, works without internet"),
 }
 
+/** How Seema talks. Changes only the tone; honesty and safety rules stay the same. */
+enum class Personality(val label: String, val hint: String) {
+    MASTI("Masti / Fun", "★ witty, playful, a little filmy — never boring"),
+    DOST("Dost / Friendly", "warm and caring, light humour"),
+    PRO("Professional", "short, clear and to the point"),
+}
+
 /** Speech input (listening) engines. */
 enum class SttEngine(val label: String, val hint: String) {
     ANDROID("Android / Google (free)", "Built in; works well for clear Hindi or English"),
@@ -63,6 +70,9 @@ data class UserSettings(
     val speechLanguage: String = "hi-IN",
     val autoSpeakReplies: Boolean = true,
     val continuousConversation: Boolean = false,
+    /** Hands-free: start listening as soon as the app is open and keep listening until Stop is pressed. */
+    val autoListen: Boolean = true,
+    val personality: Personality = Personality.MASTI,
     val announceNotifications: Boolean = false,
     val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),
     /** Say only who wrote, and read the message only after the user taps Read. */

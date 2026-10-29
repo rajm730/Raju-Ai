@@ -118,6 +118,12 @@ internal fun EngineDetails(
         TtsEngine.ELEVENLABS -> {
             OptionPicker("Model", s.elevenModel, elevenModels) { viewModel.setElevenModel(it.id) }
             CloudVoicePicker(s.elevenVoiceName ?: s.elevenVoiceId, elevenVoices, viewModel::loadElevenLabs, viewModel::setElevenVoice)
+            if (elevenVoices.firstOrNull { it.id == s.elevenVoiceId }?.paidOnly == true) {
+                Text(
+                    "This is a Voice Library voice: it needs a paid ElevenLabs plan. Until then Seema speaks with the free default voice (Sarah).",
+                    style = MaterialTheme.typography.bodyMedium, color = WarningAmber,
+                )
+            }
             Text(
                 "Suggestion: ★ Multilingual v2 for the sweetest, most natural Hindi; ★ Flash v2.5 if the free credits run out fast. " +
                     "Pick a ♀ voice and tap Test voice. Free plan: 10,000 credits a month.",

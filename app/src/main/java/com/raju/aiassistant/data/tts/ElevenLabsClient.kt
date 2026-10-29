@@ -82,6 +82,8 @@ class ElevenLabsClient(
                     .filter { it.isNotBlank() }.joinToString(", "),
                 female = label("gender") == "female",
                 hindi = "hi" in verified || label("language") == "hi" || "hindi" in label("accent"),
+                // Premade, cloned and designed voices are the user's own; anything else came from the Voice Library.
+                paidOnly = o.str("category")?.lowercase().let { it != null && it !in OWN_CATEGORIES },
             )
         }
     }
@@ -99,5 +101,7 @@ class ElevenLabsClient(
         }
     }
 }
+
+private val OWN_CATEGORIES = setOf("premade", "cloned", "generated")
 
 internal fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }

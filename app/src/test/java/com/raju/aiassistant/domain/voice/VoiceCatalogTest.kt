@@ -33,4 +33,12 @@ class VoiceCatalogTest {
         assertEquals(VoiceCatalog.deepgramSttModels.first(), VoiceCatalog.sttOption("unknown"))
         assertTrue(VoiceCatalog.deepgramVoices.all { it.id.startsWith("aura-2-") && it.id.endsWith("-en") })
     }
+
+    @Test
+    fun paidOnlyVoicesAreNeverTheAutomaticChoice() {
+        val voices = listOf(CloudVoice("lib", "Tara", female = true, hindi = true, paidOnly = true), CloudVoice("free", "Sarah", female = true))
+        assertEquals("free", VoiceCatalog.bestDefault(voices)?.id)
+        assertTrue(VoiceCatalog.isPaidVoiceError("Unexpected error (HTTP 402): payment_required: Free users cannot use library voices via the API."))
+        assertTrue(!VoiceCatalog.isPaidVoiceError("API key was rejected (HTTP 401)"))
+    }
 }
