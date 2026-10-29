@@ -13,6 +13,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raju.aiassistant.core.security.maskSecret
 import com.raju.aiassistant.data.search.TavilyClient
+import com.raju.aiassistant.data.tts.CartesiaClient
+import com.raju.aiassistant.data.tts.DeepgramClient
+import com.raju.aiassistant.data.tts.ElevenLabsClient
 import com.raju.aiassistant.data.tts.SarvamTtsClient
 import com.raju.aiassistant.data.tts.VoiceOption
 import com.raju.aiassistant.di.AppContainer
@@ -23,7 +26,11 @@ import com.raju.aiassistant.domain.ai.pickDefaultModel
 import com.raju.aiassistant.domain.model.ConnectionTest
 import com.raju.aiassistant.domain.model.MusicService
 import com.raju.aiassistant.domain.model.SecretId
+import com.raju.aiassistant.domain.model.SttEngine
 import com.raju.aiassistant.domain.model.TtsEngine
+import com.raju.aiassistant.domain.voice.CloudVoice
+import com.raju.aiassistant.domain.voice.VoiceCatalog
+import com.raju.aiassistant.domain.voice.VoiceModelOption
 import com.raju.aiassistant.domain.model.UserSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -77,6 +84,15 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     private val _info = MutableStateFlow<String?>(null)
     val info: StateFlow<String?> = _info.asStateFlow()
     val activeTtsEngine: StateFlow<String?> = c.speaker.activeEngine
+    private val _elevenModels = MutableStateFlow(VoiceCatalog.elevenModels)
+    val elevenModels: StateFlow<List<VoiceModelOption>> = _elevenModels.asStateFlow()
+    private val _elevenVoices = MutableStateFlow<List<CloudVoice>>(emptyList())
+    val elevenVoices: StateFlow<List<CloudVoice>> = _elevenVoices.asStateFlow()
+    private val _cartesiaVoices = MutableStateFlow<List<CloudVoice>>(emptyList())
+    val cartesiaVoices: StateFlow<List<CloudVoice>> = _cartesiaVoices.asStateFlow()
+    /** Result of the last voice/model list load (errors are shown under the picker). */
+    private val _voiceListMessage = MutableStateFlow<String?>(null)
+    val voiceListMessage: StateFlow<String?> = _voiceListMessage.asStateFlow()
     private val _diagnostics = MutableStateFlow(Diagnostics())
     val diagnostics: StateFlow<Diagnostics> = _diagnostics.asStateFlow()
 
@@ -164,6 +180,12 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                     is AiResult.Success -> AiResult.Success("Connected — search returned ${r.value.results.size} result(s).")
                     is AiResult.Failure -> r
                 }
+                id == SecretId.ELEVENLABS_API_KEY -> testElevenLabs(key)
+                id == SecretId.CARTESIA_API_KEY -> testCartesia(key)
+                id == SecretId.DEEPGRAM_API_KEY -> when (val r = DeepgramClient(c.http, key).synthesize("Hello", c.currentSettings.value.deepgramVoice)) {
+                    is AiResult.Success -> AiResult.Success("Connected — received ${r.value.size / 1024} KB of audio. Deepgram can now listen (Speech input) and speak English.")
+                    is AiResult.Failure -> r
+                }
                 else -> when (val r = SarvamTtsClient(c.http, key).synthesize("Namaste", c.currentSettings.value.sarvamSpeaker, "hi-IN", 1f)) {
                     is AiResult.Success -> AiResult.Success("Connected — received ${r.value.size / 1024} KB of audio.")
                     is AiResult.Failure -> r
@@ -180,6 +202,71 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun loadModels(provider: ProviderId) = testSecret(provider.secret)
+
+    /** Real request with the chosen model and voice; also fills the model and voice pickers. */
+    private suspend fun testElevenLabs(key: String): AiResult<String> {
+        val client = ElevenLabsClient(c.http, key)
+        loadElevenLists(client)
+        val s = c.currentSettings.value
+        val voice = s.elevenVoiceId ?: VoiceCatalog.bestDefault(_elevenVoices.value)?.also { repo.setElevenVoice(it.id, it.name) }?.id
+            ?: VoiceCatalog.ELEVEN_FALLBACK_VOICE
+        return when (val r = client.synthesize("Namaste", voice, s.elevenModel, 1f)) {
+            is AiResult.Success -> AiResult.Success("Connected — model ${s.elevenModel}, received ${r.value.size / 1024} KB of audio.")
+            is AiResult.Failure -> r
+        }
+    }
+
+    private suspend fun testCartesia(key: String): AiResult<String> {
+        val client = CartesiaClient(c.http, key)
+        loadCartesiaList(client)
+        val s = c.currentSettings.value
+        val voice = s.cartesiaVoiceId ?: VoiceCatalog.bestDefault(_cartesiaVoices.value)?.also { repo.setCartesiaVoice(it.id, it.name) }?.id
+            ?: return AiResult.Failure(com.raju.aiassistant.domain.ai.FailureKind.UNKNOWN, _voiceListMessage.value ?: "No Cartesia voice found.")
+        return when (val r = client.synthesize("Namaste", voice, s.cartesiaModel, "hi", 1f, s.cartesiaMood)) {
+            is AiResult.Success -> AiResult.Success("Connected — model ${s.cartesiaModel}, received ${r.value.size / 1024} KB of audio.")
+            is AiResult.Failure -> r
+        }
+    }
+
+    private suspend fun loadElevenLists(client: ElevenLabsClient) {
+        val models = client.listModels()
+        if (models is AiResult.Success) _elevenModels.value = VoiceCatalog.mergeElevenModels(models.value)
+        when (val voices = client.listVoices()) {
+            is AiResult.Success -> {
+                _elevenVoices.value = VoiceCatalog.sortVoices(voices.value)
+                _voiceListMessage.value = "ElevenLabs: ${voices.value.size} voices loaded (female voices first)."
+            }
+            is AiResult.Failure -> _voiceListMessage.value = "ElevenLabs voices could not be loaded: ${voices.message}"
+        }
+    }
+
+    private suspend fun loadCartesiaList(client: CartesiaClient) {
+        when (val voices = client.listVoices()) {
+            is AiResult.Success -> {
+                _cartesiaVoices.value = VoiceCatalog.sortVoices(voices.value)
+                _voiceListMessage.value = "Cartesia: ${voices.value.size} female voices loaded (Hindi voices first)."
+            }
+            is AiResult.Failure -> _voiceListMessage.value = "Cartesia voices could not be loaded: ${voices.message}"
+        }
+    }
+
+    fun loadElevenLabs() = launch {
+        val key = c.secureKeyStore.get(SecretId.ELEVENLABS_API_KEY)
+        if (key == null) {
+            _voiceListMessage.value = "Save an ElevenLabs key first (card below)."
+            return@launch
+        }
+        loadElevenLists(ElevenLabsClient(c.http, key))
+    }
+
+    fun loadCartesia() = launch {
+        val key = c.secureKeyStore.get(SecretId.CARTESIA_API_KEY)
+        if (key == null) {
+            _voiceListMessage.value = "Save a Cartesia key first (card below)."
+            return@launch
+        }
+        loadCartesiaList(CartesiaClient(c.http, key))
+    }
     fun selectModel(provider: ProviderId, model: String) = launch { repo.setModel(provider, model) }
 
     // ------------------------------------------------------------ voice
@@ -205,6 +292,14 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     fun setDefaultProvider(v: ProviderId) = launch { repo.setDefaultProvider(v) }
     fun setTtsEngine(v: TtsEngine) = launch { repo.setTtsEngine(v) }
     fun setSarvamSpeaker(v: String) = launch { repo.setSarvamSpeaker(v) }
+    fun setElevenModel(v: String) = launch { repo.setElevenModel(v) }
+    fun setElevenVoice(v: CloudVoice) = launch { repo.setElevenVoice(v.id, v.name) }
+    fun setCartesiaModel(v: String) = launch { repo.setCartesiaModel(v) }
+    fun setCartesiaVoice(v: CloudVoice) = launch { repo.setCartesiaVoice(v.id, v.name) }
+    fun setCartesiaMood(v: String) = launch { repo.setCartesiaMood(v) }
+    fun setDeepgramVoice(v: String) = launch { repo.setDeepgramVoice(v) }
+    fun setSttEngine(v: SttEngine) = launch { repo.setSttEngine(v) }
+    fun setDeepgramSttModel(v: String) = launch { repo.setDeepgramSttModel(v) }
     fun setSpeechRate(v: Float) = launch { repo.setSpeechRate(v) }
     fun setAndroidVoice(v: String?) = launch { repo.setAndroidVoice(v) }
     fun setSpeechLanguage(v: String) = launch { repo.setSpeechLanguage(v) }

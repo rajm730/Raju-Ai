@@ -86,6 +86,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
     val voiceTest by viewModel.voiceTest.collectAsStateWithLifecycle()
     val activeEngine by viewModel.activeTtsEngine.collectAsStateWithLifecycle()
     val info by viewModel.info.collectAsStateWithLifecycle()
+    val elevenModels by viewModel.elevenModels.collectAsStateWithLifecycle()
+    val elevenVoices by viewModel.elevenVoices.collectAsStateWithLifecycle()
+    val cartesiaVoices by viewModel.cartesiaVoices.collectAsStateWithLifecycle()
+    val voiceListMessage by viewModel.voiceListMessage.collectAsStateWithLifecycle()
     val s = state.settings
     val context = LocalContext.current
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
@@ -217,18 +221,29 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
 
         // ---------------------------------------------------------------- voice
         HudPanel(title = "Voice") {
-            Text("Speech output", style = MaterialTheme.typography.titleMedium)
-            TtsEngine.entries.forEach { e -> RadioRow(e.label, s.ttsEngine == e) { viewModel.setTtsEngine(e) } }
+            Text("Speech output (Seema's voice)", style = MaterialTheme.typography.titleMedium)
+            Text("If the chosen voice fails (no key, no internet, credits used up), the next one is used automatically.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            TtsEngine.entries.forEach { e ->
+                val keyMissing = when (e) {
+                    TtsEngine.SARVAM -> state.secrets[SecretId.SARVAM_API_KEY]?.configured != true
+                    TtsEngine.ELEVENLABS -> state.secrets[SecretId.ELEVENLABS_API_KEY]?.configured != true
+                    TtsEngine.CARTESIA -> state.secrets[SecretId.CARTESIA_API_KEY]?.configured != true
+                    TtsEngine.DEEPGRAM -> state.secrets[SecretId.DEEPGRAM_API_KEY]?.configured != true
+                    TtsEngine.ANDROID -> false
+                }
+                HintRadioRow(e.label, e.hint + if (keyMissing) " · key not set" else "", s.ttsEngine == e) { viewModel.setTtsEngine(e) }
+            }
             if (s.ttsEngine == TtsEngine.SARVAM) {
                 Text("Sarvam voice (female)", style = MaterialTheme.typography.bodyMedium)
                 ChipRow(SARVAM_FEMALE_SPEAKERS, s.sarvamSpeaker, { it.replaceFirstChar(Char::uppercase) }) { viewModel.setSarvamSpeaker(it) }
-                Text("Needs internet and a Sarvam key (below). If it fails, the offline Android voice is used and the reason is shown.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-            } else {
+                Text("Needs internet and a Sarvam key (below). Suggestion: Priya or Kavya for a sweet tone.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            } else if (s.ttsEngine == TtsEngine.ANDROID) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Android voice: " + (voices.firstOrNull { it.name == s.androidVoice }?.label ?: s.androidVoice ?: "Default"), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     VoicePicker(voices, onLoad = viewModel::loadVoices, onSelect = viewModel::setAndroidVoice)
                 }
             }
+            EngineDetails(s, viewModel, elevenModels, elevenVoices, cartesiaVoices, voiceListMessage)
             var rate by remember(s.speechRate) { mutableFloatStateOf(s.speechRate) }
             Text("Speaking speed: ${"%.1f".format(rate)}×", style = MaterialTheme.typography.bodyMedium)
             Slider(value = rate, onValueChange = { rate = it }, valueRange = 0.5f..2f, steps = 14, onValueChangeFinished = { viewModel.setSpeechRate(rate) })
@@ -239,12 +254,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             voiceTest?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = TextSecondary) }
             activeEngine?.let { Text("Active: $it", style = MaterialTheme.typography.bodyMedium, color = TextSecondary) }
 
+            SpeechInputSettings(s, viewModel, state.secrets[SecretId.DEEPGRAM_API_KEY]?.configured == true)
             Text("Speech input language", style = MaterialTheme.typography.titleMedium)
             ChipRow(SPEECH_LANGUAGES.map { it.first }, s.speechLanguage, { tag -> SPEECH_LANGUAGES.first { it.first == tag }.second }) { viewModel.setSpeechLanguage(it) }
             ToggleRow("Speak replies aloud", s.autoSpeakReplies, viewModel::setAutoSpeak)
             ToggleRow("Continuous conversation (keeps listening after each reply while the app is open)", s.continuousConversation, viewModel::setContinuous)
         }
         SecretCard(SecretId.SARVAM_API_KEY, state.secrets[SecretId.SARVAM_API_KEY] ?: SecretStatus(), viewModel, title = "Sarvam AI voice key")
+        SecretCard(SecretId.ELEVENLABS_API_KEY, state.secrets[SecretId.ELEVENLABS_API_KEY] ?: SecretStatus(), viewModel, title = "ElevenLabs voice key") {
+            Text("ElevenLabs → Developers → API keys. Allow \"Text to Speech\" (and \"Voices: read\" + \"Models: read\" so the lists load). Test plays nothing; it checks a real request and loads the voices.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
+        SecretCard(SecretId.CARTESIA_API_KEY, state.secrets[SecretId.CARTESIA_API_KEY] ?: SecretStatus(), viewModel, title = "Cartesia voice key") {
+            Text("Cartesia playground → API keys. Test checks a real request and picks a Hindi female voice if none is chosen.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
+        SecretCard(SecretId.DEEPGRAM_API_KEY, state.secrets[SecretId.DEEPGRAM_API_KEY] ?: SecretStatus(), viewModel, title = "Deepgram key (listening + English voice)") {
+            Text("Use a key that does not expire (the \"Auto-generated Playground\" key expires in hours). Console → API keys → Create a new API key.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
 
         // ---------------------------------------------------------------- phone
         HudPanel(title = "Phone & music") {
@@ -433,14 +458,14 @@ private fun VoicePicker(voices: List<com.raju.aiassistant.data.tts.VoiceOption>,
 }
 
 @Composable
-private fun ChipRow(options: List<String>, selected: String, label: (String) -> String, onSelect: (String) -> Unit) {
+internal fun ChipRow(options: List<String>, selected: String, label: (String) -> String, onSelect: (String) -> Unit) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         options.forEach { o -> FilterChip(selected = o == selected, onClick = { onSelect(o) }, label = { Text(label(o)) }) }
     }
 }
 
 @Composable
-private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()

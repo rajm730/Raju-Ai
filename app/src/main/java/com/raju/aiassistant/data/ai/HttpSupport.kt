@@ -63,6 +63,13 @@ suspend fun OkHttpClient.fetch(request: Request): AiResult<Pair<Int, String>> = 
     ioFailure(e)
 }
 
+/** Like [fetch], for binary responses such as audio. */
+suspend fun OkHttpClient.fetchBytes(request: Request): AiResult<Pair<Int, ByteArray>> = try {
+    await(request).use { r -> AiResult.Success(r.code to (r.body?.bytes() ?: ByteArray(0))) }
+} catch (e: IOException) {
+    ioFailure(e)
+}
+
 fun ioFailure(e: IOException): AiResult.Failure = when (e) {
     is SocketTimeoutException -> AiResult.Failure(FailureKind.TIMEOUT, FailureKind.TIMEOUT.userMessage)
     is UnknownHostException -> AiResult.Failure(FailureKind.NETWORK, "No internet connection or DNS failure")
@@ -75,6 +82,8 @@ fun httpFailure(code: Int, body: String): AiResult.Failure {
     val detail = extractErrorMessage(body)
     val lower = detail.lowercase()
     val kind = when {
+        // ElevenLabs reports used-up credits as 401 "quota_exceeded"; that is not a bad key.
+        code in setOf(401, 402, 429) && ("quota" in lower || "credits" in lower || "insufficient" in lower) -> FailureKind.QUOTA_EXCEEDED
         code == 401 || code == 403 -> FailureKind.INVALID_KEY
         code == 400 && ("api key" in lower || "api_key" in lower || "incorrect key" in lower) -> FailureKind.INVALID_KEY
         code == 429 && ("quota" in lower || "billing" in lower || "credits" in lower) -> FailureKind.QUOTA_EXCEEDED
@@ -93,11 +102,13 @@ fun httpFailure(code: Int, body: String): AiResult.Failure {
 fun extractErrorMessage(body: String): String {
     val root = runCatching { JsonFormat.parseToJsonElement(body) }.getOrNull() as? JsonObject ?: return ""
     val error = root["error"]
+    val detail = root["detail"]
+    fun JsonObject.text(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
     return when {
         error is JsonPrimitive -> error.contentOrNull.orEmpty()
-        error is JsonObject -> (error["message"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        else -> (root["message"] as? JsonPrimitive)?.contentOrNull
-            ?: (root["detail"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        error is JsonObject -> error.text("message").orEmpty()
+        detail is JsonObject -> listOfNotNull(detail.text("status"), detail.text("message")).joinToString(": ") // ElevenLabs
+        else -> root.text("message") ?: (detail as? JsonPrimitive)?.contentOrNull ?: root.text("err_msg").orEmpty() // Deepgram: err_msg
     }
 }
 

@@ -3,6 +3,9 @@ package com.raju.aiassistant.data
 import com.raju.aiassistant.data.ai.GeminiProvider
 import com.raju.aiassistant.data.ai.OpenAiCompatibleProvider
 import com.raju.aiassistant.data.search.TavilyClient
+import com.raju.aiassistant.data.tts.CartesiaClient
+import com.raju.aiassistant.data.tts.DeepgramClient
+import com.raju.aiassistant.data.tts.ElevenLabsClient
 import com.raju.aiassistant.data.tts.SarvamTtsClient
 import com.raju.aiassistant.domain.ai.AiResult
 import com.raju.aiassistant.domain.ai.FailureKind
@@ -151,5 +154,88 @@ class ProvidersTest {
         assertEquals("priya", validSarvamSpeaker("anushka"))
         assertEquals("priya", validSarvamSpeaker(null))
         assertEquals("kavya", validSarvamSpeaker("kavya"))
+    }
+
+    // ---------------------------------------------------------------- ElevenLabs / Cartesia / Deepgram
+
+    private val wavBytes get() = com.raju.aiassistant.core.audio.pcm16ToWav(ByteArray(480), 24_000)
+    private fun enqueueBytes(bytes: ByteArray) = server.enqueue(MockResponse().setResponseCode(200).setBody(okio.Buffer().write(bytes)))
+
+    @Test
+    fun elevenLabsSpeaksWithKeyHeaderModelAndWav() = runBlocking {
+        enqueueBytes(wavBytes)
+        val r = ElevenLabsClient(http, "xi", url).synthesize("Namaste", "voice1", "eleven_multilingual_v2", 1.5f) as AiResult.Success
+        assertTrue(r.value.contentEquals(wavBytes))
+        val req = server.takeRequest()
+        assertEquals("xi", req.getHeader("xi-api-key"))
+        assertTrue(req.path!!.endsWith("/v1/text-to-speech/voice1?output_format=wav_24000"))
+        val body = req.body.readUtf8()
+        assertTrue(body.contains("\"model_id\":\"eleven_multilingual_v2\""))
+        assertTrue(body.contains("\"speed\":1.2")) // clamped to ElevenLabs' range
+    }
+
+    @Test
+    fun elevenLabsListsHindiTtsModelsAndFemaleVoices() = runBlocking {
+        enqueue(200, """[{"model_id":"eleven_multilingual_v2","name":"Multilingual v2","can_do_text_to_speech":true,"languages":[{"language_id":"en","name":"English"},{"language_id":"hi","name":"Hindi"}]},
+            {"model_id":"eleven_english_sts_v2","can_do_text_to_speech":false},
+            {"model_id":"eleven_monolingual_v1","can_do_text_to_speech":true,"languages":[{"language_id":"en","name":"English"}]}]""")
+        val models = ElevenLabsClient(http, "xi", url).listModels() as AiResult.Success
+        assertEquals(listOf("eleven_multilingual_v2"), models.value.map { it.first })
+        enqueue(200, """{"voices":[{"voice_id":"a","name":"Sarah","labels":{"gender":"female","accent":"american"}},{"voice_id":"b","name":"Adam","labels":{"gender":"male"}}],"has_more":false,"total_count":2}""")
+        val voices = ElevenLabsClient(http, "xi", url).listVoices() as AiResult.Success
+        assertEquals(listOf(true, false), voices.value.map { it.female })
+        assertEquals("american", voices.value.first().detail)
+    }
+
+    @Test
+    fun elevenLabsUsedUpCreditsIsQuotaNotBadKey() = runBlocking {
+        enqueue(401, """{"detail":{"status":"quota_exceeded","message":"This request exceeds your quota."}}""")
+        val r = ElevenLabsClient(http, "xi", url).synthesize("Hi", "v", "m", 1f) as AiResult.Failure
+        assertEquals(FailureKind.QUOTA_EXCEEDED, r.kind)
+        assertTrue(r.message.contains("quota_exceeded"))
+    }
+
+    @Test
+    fun cartesiaSpeaksWithVersionHeaderVoiceAndMood() = runBlocking {
+        enqueueBytes(wavBytes)
+        val r = CartesiaClient(http, "ck", url).synthesize("Namaste", "v-hi", "sonic-3", "hi", 1f, "content") as AiResult.Success
+        assertTrue(r.value.contentEquals(wavBytes))
+        val req = server.takeRequest()
+        assertEquals("Bearer ck", req.getHeader("Authorization"))
+        assertEquals(CartesiaClient.API_VERSION, req.getHeader("Cartesia-Version"))
+        assertTrue(req.path!!.endsWith("/tts/bytes"))
+        val body = req.body.readUtf8()
+        assertTrue(body.contains("\"voice\":{\"id\":\"v-hi\"}"))
+        assertTrue(body.contains("\"container\":\"wav\"") && body.contains("\"encoding\":\"pcm_s16le\""))
+        assertTrue(body.contains("\"language\":\"hi\"") && body.contains("\"emotion\":\"content\""))
+    }
+
+    @Test
+    fun cartesiaVoicePagesAreFollowed() = runBlocking {
+        enqueue(200, """{"data":[{"id":"v1","name":"Emma","language":"en","gender":"feminine"}],"has_more":true}""")
+        enqueue(200, """{"data":[{"id":"v2","name":"Riya","language":"hi","gender":"feminine","description":"Warm Hindi voice"}],"has_more":false}""")
+        val r = CartesiaClient(http, "ck", url).listVoices() as AiResult.Success
+        assertEquals(listOf("v1", "v2"), r.value.map { it.id })
+        assertTrue(r.value[1].hindi)
+        server.takeRequest()
+        val second = server.takeRequest()
+        assertTrue(second.path!!.contains("starting_after=v1") && second.path!!.contains("gender=feminine"))
+    }
+
+    @Test
+    fun deepgramSpeaksAndTranscribes() = runBlocking {
+        enqueueBytes(wavBytes)
+        val speak = DeepgramClient(http, "dg", url).synthesize("Hello", "aura-2-thalia-en") as AiResult.Success
+        assertTrue(speak.value.contentEquals(wavBytes))
+        val req = server.takeRequest()
+        assertEquals("Token dg", req.getHeader("Authorization"))
+        assertTrue(req.path!!.contains("/v1/speak?model=aura-2-thalia-en&encoding=linear16&container=wav&sample_rate=24000"))
+
+        enqueue(200, """{"results":{"channels":[{"alternatives":[{"transcript":"Mom ko call karo","confidence":0.97}]}]}}""")
+        val text = DeepgramClient(http, "dg", url).transcribe(wavBytes, "nova-3", "multi") as AiResult.Success
+        assertEquals("Mom ko call karo", text.value)
+        val listen = server.takeRequest()
+        assertTrue(listen.path!!.contains("/v1/listen?model=nova-3&language=multi"))
+        assertEquals("audio/wav", listen.getHeader("Content-Type"))
     }
 }

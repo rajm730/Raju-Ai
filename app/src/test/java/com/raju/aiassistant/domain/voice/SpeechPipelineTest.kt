@@ -53,7 +53,11 @@ class SpeechPipelineTest {
 
     @Test
     fun selectedEngineIsTriedFirstThenTheRest() {
-        assertEquals(listOf(TtsEngine.ANDROID, TtsEngine.SARVAM), providerOrder(TtsEngine.ANDROID))
+        assertEquals(
+            listOf(TtsEngine.ELEVENLABS, TtsEngine.SARVAM, TtsEngine.CARTESIA, TtsEngine.DEEPGRAM, TtsEngine.ANDROID),
+            providerOrder(TtsEngine.ELEVENLABS),
+        )
+        assertEquals(TtsEngine.ANDROID, providerOrder(TtsEngine.SARVAM).last()) // offline voice is always the last fallback
         assertEquals(TtsEngine.SARVAM, providerOrder(TtsEngine.SARVAM).first())
         assertEquals(TtsEngine.entries.size, providerOrder(TtsEngine.SARVAM).toSet().size)
     }

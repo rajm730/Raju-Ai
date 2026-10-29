@@ -58,3 +58,13 @@ fun pcmLevel(data: ByteArray, offset: Int, length: Int): Float {
     val rms = sqrt(sum / count) / Short.MAX_VALUE
     return (rms * 3.5).toFloat().coerceIn(0f, 1f) // speech RMS is usually < 0.3, so scale up
 }
+
+/** Wraps raw little-endian 16-bit PCM in a 44-byte RIFF/WAVE header. */
+fun pcm16ToWav(pcm: ByteArray, sampleRate: Int, channels: Int = 1): ByteArray {
+    val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+    header.put("RIFF".toByteArray(Charsets.US_ASCII)).putInt(36 + pcm.size).put("WAVE".toByteArray(Charsets.US_ASCII))
+    header.put("fmt ".toByteArray(Charsets.US_ASCII)).putInt(16).putShort(1).putShort(channels.toShort())
+        .putInt(sampleRate).putInt(sampleRate * channels * 2).putShort((channels * 2).toShort()).putShort(16)
+    header.put("data".toByteArray(Charsets.US_ASCII)).putInt(pcm.size)
+    return header.array() + pcm
+}

@@ -15,9 +15,17 @@ import com.raju.aiassistant.data.search.TavilyClient
 import com.raju.aiassistant.data.tools.AndroidDeviceTools
 import com.raju.aiassistant.data.tts.AndroidTts
 import com.raju.aiassistant.data.tts.AndroidTtsProvider
+import com.raju.aiassistant.data.tts.CartesiaTtsProvider
+import com.raju.aiassistant.data.tts.DeepgramTtsProvider
+import com.raju.aiassistant.data.tts.ElevenLabsTtsProvider
 import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
+import com.raju.aiassistant.data.voice.DeepgramVoiceInput
+import com.raju.aiassistant.data.voice.SwitchingVoiceInput
 import com.raju.aiassistant.data.voice.VoiceInputManager
+import com.raju.aiassistant.domain.model.SecretId
+import com.raju.aiassistant.domain.model.SttEngine
+import com.raju.aiassistant.domain.voice.VoiceCatalog
 import com.raju.aiassistant.domain.assistant.AnnouncementDeduper
 import com.raju.aiassistant.domain.notify.AnnouncementCoordinator
 import com.raju.aiassistant.domain.notify.CallDeduper
@@ -66,11 +74,30 @@ class AppContainer(context: Context) {
     val speaker by lazy {
         val providers = listOf(
             SarvamTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value.sarvamSpeaker }),
+            ElevenLabsTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value }) { v ->
+                settingsRepository.setElevenVoice(v.id, v.name)
+            },
+            CartesiaTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value }) { v ->
+                settingsRepository.setCartesiaVoice(v.id, v.name)
+            },
+            DeepgramTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value }),
             AndroidTtsProvider(androidTts) { currentSettings.value.androidVoice },
         )
         TtsManager(appScope, SpeechPipeline(AudioPlayer(appContext)), providers, androidTts, currentSettings)
     }
     val voiceInput by lazy { VoiceInputManager(appContext) }
+    val deepgramVoiceInput by lazy {
+        DeepgramVoiceInput(
+            appContext, http, appScope,
+            apiKey = { secureKeyStore.get(SecretId.DEEPGRAM_API_KEY) },
+            model = { VoiceCatalog.sttOption(currentSettings.value.deepgramSttModel) },
+            configured = { SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value && online.value },
+        )
+    }
+    /** What the assistant listens with: Android's recogniser or Deepgram, as chosen in Settings. */
+    val assistantVoiceInput by lazy {
+        SwitchingVoiceInput(voiceInput, deepgramVoiceInput, { currentSettings.value.sttEngine == SttEngine.DEEPGRAM }, appScope)
+    }
     val deviceTools by lazy { AndroidDeviceTools(appContext) }
     val announcementDeduper = AnnouncementDeduper()
     val callDeduper = CallDeduper()
@@ -107,7 +134,7 @@ class AppContainer(context: Context) {
             actionLog = actionLogRepository,
             tools = deviceTools,
             speaker = speaker,
-            voice = voiceInput,
+            voice = assistantVoiceInput,
             isOnline = { online.value },
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
