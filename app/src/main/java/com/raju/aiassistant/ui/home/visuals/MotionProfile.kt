@@ -12,6 +12,7 @@ data class MotionProfile(
 
 fun motionProfileFor(lowPowerMode: Boolean, reducedMotion: Boolean, systemAnimationsEnabled: Boolean): MotionProfile = when {
     reducedMotion || !systemAnimationsEnabled -> MotionProfile(animate = false, maxFps = 0, particleCount = 0, richEffects = true)
-    lowPowerMode -> MotionProfile(animate = true, maxFps = 30, particleCount = 14, richEffects = false)
-    else -> MotionProfile(animate = true, maxFps = 60, particleCount = 48, richEffects = true)
+    lowPowerMode -> MotionProfile(animate = true, maxFps = 20, particleCount = 12, richEffects = false)
+    // 30 fps keeps the heartbeat smooth while halving the drawing work (and battery) of 60 fps.
+    else -> MotionProfile(animate = true, maxFps = 30, particleCount = 36, richEffects = true)
 }

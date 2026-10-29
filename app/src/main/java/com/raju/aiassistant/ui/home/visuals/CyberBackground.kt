@@ -4,6 +4,8 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -11,13 +13,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import kotlin.math.hypot
 import kotlin.math.sin
 
-/** Glyphs of the falling "code rain": binary, hex, katakana and a few Devanagari letters. */
-private val GLYPHS = "01010110ABCDEF0123456789アイウエオカキクケコサシスセソタチツテトナニヌネノ<>/{}[]=+*#$%&सीमाकखगघचछजझ".toCharArray()
+/**
+ * Glyphs of the falling "code rain": binary, hex and code symbols. ASCII only — glyphs from other
+ * scripts need font fallback on every draw, which is far too slow on budget phones.
+ */
+private val GLYPHS = "0101011001ABCDEF0123456789<>/{}[]=+*#$%&XYZ".toCharArray()
+
+/** The rain and HUD redraw at this rate, independent of the reactor's frame rate. */
+private const val RAIN_FPS = 12f
 
 /**
  * Full-screen sci-fi backdrop for the home screen: falling code columns, a faint grid, HUD corner
@@ -44,9 +53,13 @@ fun CyberBackground(
             typeface = Typeface.MONOSPACE
         }
     }
-    Canvas(modifier) {
-        val t = time()
-        drawBackdrop(color, accent, focus)
+    // Static parts (glow, grid, vignette) are drawn once, not every frame.
+    Canvas(modifier) { drawBackdrop(color, accent, focus) }
+    // The animated layer only redraws when this tick changes (RAIN_FPS times a second),
+    // so the reactor can animate smoothly on top without repainting the whole screen.
+    val tick by remember(time) { derivedStateOf { (time() * RAIN_FPS).toInt() } }
+    Canvas(modifier.graphicsLayer()) {
+        val t = tick / RAIN_FPS
         drawCodeRain(paint, color, t, density, focus)
         drawScanLine(color, t)
         drawHudFrame(color, accent, t)
@@ -70,7 +83,7 @@ private fun DrawScope.drawBackdrop(color: Color, accent: Color, focus: Offset) {
 
 private fun DrawScope.drawCodeRain(paint: Paint, color: Color, t: Float, density: Float, focus: Offset) {
     if (density <= 0f) return
-    val cell = 15f * this.density
+    val cell = 17f * this.density
     paint.textSize = cell * 0.85f
     paint.isFakeBoldText = false
     val cols = (size.width / cell).toInt() + 1
@@ -84,7 +97,7 @@ private fun DrawScope.drawCodeRain(paint: Paint, color: Color, t: Float, density
         for (col in 0 until cols) {
             if (pseudoRandom(col * 31 + 7) > density) continue // only some columns run
             val speed = 5f + pseudoRandom(col * 13 + 1) * 9f // rows per second
-            val length = 7 + (pseudoRandom(col * 17 + 3) * 14f).toInt()
+            val length = 5 + (pseudoRandom(col * 17 + 3) * 9f).toInt()
             val cycle = rows + length + (pseudoRandom(col * 23 + 9) * rows).toInt()
             val headRow = ((t * speed + pseudoRandom(col * 19 + 5) * cycle) % cycle).toInt()
             val x = col * cell

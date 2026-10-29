@@ -21,7 +21,8 @@ class MotionProfileTest {
         val normal = motionProfileFor(false, false, true)
         val low = motionProfileFor(true, false, true)
         assertTrue(low.animate)
-        assertEquals(30, low.maxFps)
+        assertEquals(20, low.maxFps)
+        assertTrue(low.maxFps < normal.maxFps)
         assertTrue(low.particleCount < normal.particleCount)
         assertFalse(low.richEffects)
     }

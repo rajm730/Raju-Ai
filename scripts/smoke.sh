@@ -23,7 +23,9 @@ adb shell settings put global window_animation_scale 1
 adb shell am force-stop $PKG
 adb logcat -c
 adb shell am start -W -n $PKG/com.raju.aiassistant.MainActivity
-sleep 25
+sleep 8
+adb shell dumpsys gfxinfo $PKG reset > /dev/null
+sleep 20
 adb shell dumpsys activity activities | grep -iE "ResumedActivity" || true
 adb exec-out screencap -p > smoke-2.png
 adb shell dumpsys gfxinfo $PKG | grep -iE "Total frames|Janky|Percentile|90th|99th" || true
