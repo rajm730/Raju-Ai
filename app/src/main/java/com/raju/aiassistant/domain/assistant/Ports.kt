@@ -14,6 +14,8 @@ interface Speaker {
     /** Speaks [text], replacing anything already playing. Returns when finished, stopped or failed. */
     suspend fun speak(text: String): SpeakResult
     fun stop()
+    /** Speech chunks (see chunkForSpeech) of the last utterance that finished playing. */
+    val playedChunks: Int get() = 0
 }
 
 interface VoiceInput {
@@ -27,17 +29,42 @@ interface VoiceInput {
 
 /**
  * Barge-in: notices the user starting to talk while the assistant is speaking, so the user can cut
- * a long answer short just by speaking ("ruko", or the next question).
+ * an answer short just by speaking — like interrupting a person.
  */
 interface BargeIn {
-    /** Starts watching the microphone; [onSpeech] is called at most once. */
-    fun start(onSpeech: () -> Unit)
+    /**
+     * Starts watching the microphone. [onInterrupt] is called (at most once) as soon as the user
+     * talks over the assistant. When [capture] is true the recording continues until the user
+     * pauses, and the whole utterance — including the words spoken before detection — is passed to
+     * [onUtterance] as 16 kHz mono 16-bit PCM (null if nothing usable was recorded).
+     */
+    fun start(capture: Boolean, onInterrupt: () -> Unit, onUtterance: (ByteArray?) -> Unit)
     fun stop()
 }
 
 object NoBargeIn : BargeIn {
-    override fun start(onSpeech: () -> Unit) {}
+    override fun start(capture: Boolean, onInterrupt: () -> Unit, onUtterance: (ByteArray?) -> Unit) {}
     override fun stop() {}
+}
+
+/** Call-style audio (echo cancellation) for hands-free conversations; see ConversationAudio. */
+interface ConversationMode {
+    val active: Boolean
+    fun enter()
+    fun exit()
+}
+
+object NoConversationMode : ConversationMode {
+    override val active = false
+    override fun enter() {}
+    override fun exit() {}
+}
+
+/** Speech-to-text for audio the app recorded itself (the interrupting utterance). */
+interface Transcriber {
+    fun isAvailable(): Boolean
+    /** [pcm16k] is 16 kHz mono 16-bit PCM. Returns the text, "" for silence, or null on failure. */
+    suspend fun transcribe(pcm16k: ByteArray): String?
 }
 
 data class VoiceError(val message: String, val noSpeech: Boolean = false, val permissionDenied: Boolean = false)

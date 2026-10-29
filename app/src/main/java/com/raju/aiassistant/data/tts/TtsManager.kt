@@ -37,11 +37,15 @@ class TtsManager(
     /** Label of the engine used for the current/last utterance. */
     val activeEngine: StateFlow<String?> = _activeEngine.asStateFlow()
 
+    @Volatile private var chunksDone = 0
+    override val playedChunks: Int get() = chunksDone
+
     private val lock = Mutex()
     private var current: Job? = null
 
     override suspend fun speak(text: String): SpeakResult {
         stop()
+        chunksDone = 0
         var result = SpeakResult(false, "none")
         val job = scope.launch {
             lock.withLock {
@@ -56,6 +60,7 @@ class TtsManager(
                         rate = s.speechRate,
                         onEngine = { _activeEngine.value = it },
                         onLevel = { _level.value = it },
+                        onChunkPlayed = { chunksDone++ },
                     )
                 } finally {
                     _speaking.value = false

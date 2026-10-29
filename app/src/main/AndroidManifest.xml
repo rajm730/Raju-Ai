@@ -8,6 +8,8 @@
 
     <!-- Runtime permissions: requested only when the related feature is used -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Call-style audio (echo cancellation) while you talk with Seema hands-free, so you can interrupt her. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Android 13+: lets the app show its own "Read / Skip" notification. Asked when announcements are turned on. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

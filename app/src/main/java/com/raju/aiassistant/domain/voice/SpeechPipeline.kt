@@ -53,6 +53,7 @@ class SpeechPipeline(private val sink: PcmSink) {
         rate: Float,
         onEngine: (String) -> Unit = {},
         onLevel: (Float) -> Unit = {},
+        onChunkPlayed: () -> Unit = {},
     ): SpeakResult {
         val chunks = chunkForSpeech(text)
         if (chunks.isEmpty()) return SpeakResult(true, "none")
@@ -97,6 +98,7 @@ class SpeechPipeline(private val sink: PcmSink) {
                     lastLabel = label
                     onEngine(label)
                     sink.play(audio, onLevel)
+                    onChunkPlayed()
                 }
                 SpeakResult(true, lastLabel, fallbackNote)
             } finally {

@@ -2,6 +2,7 @@ package com.raju.aiassistant.di
 
 import android.content.Context
 import com.raju.aiassistant.core.audio.AudioPlayer
+import com.raju.aiassistant.core.audio.ConversationAudio
 import com.raju.aiassistant.core.network.ConnectivityObserver
 import com.raju.aiassistant.core.security.SecureKeyStore
 import com.raju.aiassistant.data.ai.AiProviderFactory
@@ -22,6 +23,10 @@ import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
 import com.raju.aiassistant.data.voice.DeepgramVoiceInput
 import com.raju.aiassistant.data.voice.MicBargeIn
+import com.raju.aiassistant.core.audio.pcm16ToWav
+import com.raju.aiassistant.data.tts.DeepgramClient
+import com.raju.aiassistant.domain.ai.AiResult
+import com.raju.aiassistant.domain.assistant.Transcriber
 import com.raju.aiassistant.data.voice.SwitchingVoiceInput
 import com.raju.aiassistant.data.voice.VoiceInputManager
 import com.raju.aiassistant.domain.model.SecretId
@@ -72,6 +77,9 @@ class AppContainer(context: Context) {
 
     val providerFactory by lazy { AiProviderFactory(http) }
     val androidTts by lazy { AndroidTts(appContext) }
+    /** Call-style audio (echo cancellation) during hands-free conversations. */
+    val conversationAudio by lazy { ConversationAudio(appContext) }
+    val audioPlayer by lazy { AudioPlayer(appContext) { conversationAudio.active } }
     val speaker by lazy {
         val providers = listOf(
             SarvamTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value.sarvamSpeaker }),
@@ -84,7 +92,7 @@ class AppContainer(context: Context) {
             DeepgramTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value }),
             AndroidTtsProvider(androidTts) { currentSettings.value.androidVoice },
         )
-        TtsManager(appScope, SpeechPipeline(AudioPlayer(appContext)), providers, androidTts, currentSettings)
+        TtsManager(appScope, SpeechPipeline(audioPlayer), providers, androidTts, currentSettings)
     }
     val voiceInput by lazy { VoiceInputManager(appContext) }
     val deepgramVoiceInput by lazy {
@@ -95,6 +103,20 @@ class AppContainer(context: Context) {
             configured = { SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value && online.value },
         )
     }
+    /** Turns the user's interrupting utterance into text (Deepgram, when its key is saved). */
+    private val deepgramTranscriber = object : Transcriber {
+        override fun isAvailable() = SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value && online.value
+
+        override suspend fun transcribe(pcm16k: ByteArray): String? {
+            val key = secureKeyStore.get(SecretId.DEEPGRAM_API_KEY) ?: return null
+            val option = VoiceCatalog.sttOption(currentSettings.value.deepgramSttModel)
+            return when (val r = DeepgramClient(http, key).transcribe(pcm16ToWav(pcm16k, 16_000), option.model, option.language)) {
+                is AiResult.Success -> r.value
+                is AiResult.Failure -> null
+            }
+        }
+    }
+
     /** What the assistant listens with: Android's recogniser or Deepgram, as chosen in Settings. */
     val assistantVoiceInput: SwitchingVoiceInput by lazy {
         SwitchingVoiceInput(
@@ -147,7 +169,9 @@ class AppContainer(context: Context) {
             speaker = speaker,
             voice = assistantVoiceInput,
             isOnline = { online.value },
-            bargeIn = MicBargeIn(appContext, appScope) { speaker.level.value },
+            bargeIn = MicBargeIn(appContext, appScope, playbackLevel = { audioPlayer.levelNow() }, callStyle = { conversationAudio.active }),
+            conversationMode = conversationAudio,
+            transcriber = deepgramTranscriber,
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }

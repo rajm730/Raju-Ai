@@ -292,7 +292,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             )
             ToggleRow("Interrupt by voice: start talking while Seema speaks and she stops to listen", s.bargeIn, viewModel::setBargeIn)
             Text(
-                "Works best when you speak a little louder than her voice. You can also tap the reactor on Home to stop her talking.",
+                "Just start talking: she stops at once, listens to you, and answers your new question. Say \"ruko\" or \"bas\" and she waits; a cough or noise and she carries on. In hands-free mode the phone uses call-style audio (like a speakerphone call) so its echo canceller can hear you over her voice. With a Deepgram key your first words are kept too. You can also tap the reactor on Home.",
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
             ToggleRow("Continuous conversation (keeps listening after each reply while the app is open)", s.continuousConversation, viewModel::setContinuous)
