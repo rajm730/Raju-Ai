@@ -31,7 +31,11 @@ API facts were checked on 29 Oct 2026 through web search, because this build env
 
 ## C. Tests actually run
 - **Local JVM** (Kotlin 2.0.21, JUnit 4, coroutines-test, MockWebServer): **98 tests, 0 failed**.
-- **GitHub Actions** (real Android SDK): `assembleDebug`, `testDebugUnitTest` (count printed in the log) and `lintDebug`. Results for this commit are in `docs/FINAL_REPORT.md` once the run finishes.
+- **GitHub Actions** (real Android SDK), run [40838486995](https://github.com/rajm730/Raju-Ai/actions/runs/40838486995) on `662aa41`:
+  - `assembleDebug`: BUILD SUCCESSFUL
+  - `testDebugUnitTest`: `UNIT TESTS: total=98 failed=0 skipped=0`
+  - `lintDebug`: BUILD SUCCESSFUL
+- The first audit run on `85f768f` failed lint with one error: NewApi on the call-screening service manifest entry. It was fixed in `662aa41` and re-run green.
 
 ## D. Not tested / blocked
 - **No phone or emulator here:** notification access on Samsung/Android 15, the Read/Skip notification, call screening on a real SIM, TTS naturalness, mic and Bluetooth have **not** been run on a device.
