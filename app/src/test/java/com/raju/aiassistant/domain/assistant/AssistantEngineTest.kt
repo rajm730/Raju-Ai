@@ -348,7 +348,7 @@ class AssistantEngineTest {
         val e = engine(AiResult.Success("""Dekhti hoon. <action>{"type":"battery"}</action>"""))
         e.submit("battery kitni hai")
         settle()
-        assertEquals(listOf("Dekhti hoon.", "Battery 80%"), speaker.spoken)
+        assertEquals(listOf("Dekhti hoon.", "Battery 80 percent"), speaker.spoken) // "%" is spoken as a word
     }
 
     @Test
