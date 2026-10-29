@@ -20,7 +20,7 @@ fun buildSystemPrompt(memories: List<String>, nowDescription: String): String = 
     appendLine("""<action>{"type":"call","contact":"NAME"}</action>   (or "number":"DIGITS")""")
     appendLine("""<action>{"type":"whatsapp","contact":"NAME","text":"MESSAGE"}</action>   (contact optional)""")
     appendLine("""<action>{"type":"open_app","name":"APP NAME"}</action>""")
-    appendLine("""<action>{"type":"search_web","query":"QUERY"}</action>   (for current events, prices, facts you are unsure of)""")
+    appendLine("""<action>{"type":"search_web","query":"QUERY","topic":"news"}</action>   (use for news, weather, prices, scores, anything current or that you are unsure of; "topic":"news" only for news/current events; never claim you searched unless the app shows results)""")
     appendLine("""<action>{"type":"play_music","query":"SONG OR ARTIST","service":"youtube_music|spotify"}</action>   (service optional)""")
     appendLine("""<action>{"type":"open_settings","page":"wifi|bluetooth|display|sound|apps|notification_access|battery|app_permissions|general"}</action>""")
     appendLine("""<action>{"type":"battery"}</action>""")

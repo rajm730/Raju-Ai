@@ -19,7 +19,8 @@ sealed interface AssistantAction {
     data class OpenApp(val name: String) : AssistantAction {
         override val label get() = "Open app: $name"
     }
-    data class SearchWeb(val query: String) : AssistantAction {
+    /** [topic] is "news" for current events (adds publish dates), otherwise null for a general search. */
+    data class SearchWeb(val query: String, val topic: String? = null) : AssistantAction {
         override val label get() = "Web search: $query"
     }
     data class PlayMusic(val query: String, val service: MusicService?) : AssistantAction {
@@ -66,7 +67,7 @@ private fun parseAction(json: String): AssistantAction? {
     return when (str("type")?.lowercase()) {
         "call" -> if (str("contact") == null && str("number") == null) null else AssistantAction.Call(str("contact"), str("number"))
         "open_app" -> str("name")?.let { AssistantAction.OpenApp(it) }
-        "search_web" -> str("query")?.let { AssistantAction.SearchWeb(it) }
+        "search_web" -> str("query")?.let { AssistantAction.SearchWeb(it, str("topic")?.lowercase()?.takeIf { t -> t == "news" }) }
         "play_music" -> str("query")?.let { q ->
             val service = when (str("service")?.lowercase()) {
                 "spotify" -> MusicService.SPOTIFY

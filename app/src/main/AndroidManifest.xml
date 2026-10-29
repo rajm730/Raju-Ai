@@ -8,6 +8,8 @@
     <!-- Runtime permissions: requested only when the related feature is used -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Android 13+: lets the app show its own "Read / Skip" notification. Asked when announcements are turned on. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Only used if the user turns on "Direct calling"; otherwise the dialer is opened. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 
@@ -63,6 +65,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Read / Skip buttons on the consent notification. Not exported: only our PendingIntents reach it. -->
+        <receiver
+            android:name=".notifications.ConsentActionReceiver"
+            android:exported="false" />
+
+        <!-- Incoming-call announcements. Bound by Android only after the user grants the call-screening role. -->
+        <service
+            android:name=".notifications.RajuCallScreeningService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
 
         <!-- Active only after the user enables Notification Access in system settings. -->
         <service

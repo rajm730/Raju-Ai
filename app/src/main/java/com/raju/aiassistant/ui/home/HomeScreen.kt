@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.raju.aiassistant.BuildConfig
 import com.raju.aiassistant.domain.model.AssistantState
 import com.raju.aiassistant.ui.RajuViewModelFactory
 import com.raju.aiassistant.ui.components.StatusChip
@@ -173,7 +174,8 @@ fun HomeScreen(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            if (showPreview) {
+            // Visual preview is a developer tool: shown only in debug builds, never in a release.
+            if (BuildConfig.DEBUG && showPreview) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
                     items(AssistantState.entries) { s ->
                         FilterChip(
@@ -184,10 +186,12 @@ fun HomeScreen(
                     }
                 }
             }
-            TextButton(onClick = {
-                showPreview = !showPreview
-                if (!showPreview) viewModel.setPreview(null)
-            }) { Text(if (showPreview) "Hide visual preview" else "Preview visual states") }
+            if (BuildConfig.DEBUG) {
+                TextButton(onClick = {
+                    showPreview = !showPreview
+                    if (!showPreview) viewModel.setPreview(null)
+                }) { Text(if (showPreview) "Hide visual preview" else "Preview visual states (debug)") }
+            }
 
             val busy = assistantState.isBusy || state.listening
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

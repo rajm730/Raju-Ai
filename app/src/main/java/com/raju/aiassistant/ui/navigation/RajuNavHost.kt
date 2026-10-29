@@ -19,6 +19,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
 import com.raju.aiassistant.RajuApp
+import com.raju.aiassistant.ui.assistant.AnnouncementPrompt
 import com.raju.aiassistant.ui.assistant.AssistantDialogs
 import com.raju.aiassistant.ui.chat.ChatScreen
 import com.raju.aiassistant.ui.home.HomeScreen
@@ -27,8 +28,9 @@ import com.raju.aiassistant.ui.tools.ToolsScreen
 
 @Composable
 fun RajuNavHost(navController: NavHostController = rememberNavController()) {
-    val engine = (LocalContext.current.applicationContext as RajuApp).container.engine
-    AssistantDialogs(engine)
+    val container = (LocalContext.current.applicationContext as RajuApp).container
+    AssistantDialogs(container.engine)
+    AnnouncementPrompt(container.announcements)
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val current = Destination.fromRoute(backStackEntry?.destination?.route)

@@ -97,6 +97,30 @@ class ProvidersTest {
     }
 
     @Test
+    fun tavilyNewsTopicDatesAndHindiQuery() = runBlocking {
+        enqueue(200, """{"results":[{"title":"Khabar","url":"https://www.example.in/a","content":"x","published_date":"Wed, 28 Oct 2026"}]}""")
+        val r = TavilyClient(http, "tvly-k", url).search("आज की ताज़ा खबरें", topic = "news") as AiResult.Success
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"topic\":\"news\""))
+        assertTrue(body.contains("आज की ताज़ा खबरें")) // UTF-8 preserved
+        assertEquals("Wed, 28 Oct 2026", r.value.results.single().publishedDate)
+        assertEquals("example.in", r.value.results.single().domain)
+    }
+
+    @Test
+    fun tavilyErrorsAreTypedAndHonest() = runBlocking {
+        val client = TavilyClient(http, "bad", url)
+        enqueue(401, """{"detail":{"error":"Unauthorized: missing or invalid API key."}}""")
+        assertEquals(FailureKind.INVALID_KEY, (client.search("q") as AiResult.Failure).kind)
+        enqueue(429, """{"detail":"rate limit"}""")
+        assertEquals(FailureKind.RATE_LIMITED, (client.search("q") as AiResult.Failure).kind)
+        enqueue(200, "not json")
+        assertEquals(FailureKind.UNKNOWN, (client.search("q") as AiResult.Failure).kind)
+        enqueue(200, """{"results":[]}""")
+        assertTrue((client.search("q") as AiResult.Success).value.results.isEmpty())
+    }
+
+    @Test
     fun sarvamDecodesAudio() = runBlocking {
         val audio = byteArrayOf(1, 2, 3)
         enqueue(200, """{"request_id":"x","audios":["${Base64.getEncoder().encodeToString(audio)}"]}""")
@@ -104,6 +128,8 @@ class ProvidersTest {
         assertTrue(r.value.contentEquals(audio))
         val req = server.takeRequest()
         assertEquals("sk", req.getHeader("api-subscription-key"))
-        assertTrue(req.body.readUtf8().contains("\"speaker\":\"anushka\""))
+        val sent = req.body.readUtf8()
+        assertTrue(sent.contains("\"speaker\":\"anushka\""))
+        assertTrue(sent.contains("\"enable_preprocessing\":true"))
     }
 }
