@@ -119,7 +119,7 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("RAJU AI", style = MaterialTheme.typography.headlineMedium, color = ReactorCyan)
+            Text("SEEMA AI", style = MaterialTheme.typography.headlineMedium, color = ReactorCyan)
 
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
@@ -250,7 +250,8 @@ private fun HudBackground(color: Color) {
 @Composable
 private fun rememberSystemAnimationsEnabled(): Boolean {
     val resolver = LocalContext.current.contentResolver
-    return remember(resolver) {
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    return remember(resolver, lifecycleState) {
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
     }
 }

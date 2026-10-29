@@ -206,4 +206,33 @@ class NotificationFlowTest {
         runCurrent()
         assertEquals(1, speaker.spoken.size)
     }
+
+    @Test
+    fun hindiPlaceholdersMeanHiddenPreview() {
+        listOf("नया संदेश", "2 नए संदेश", "संदेश छिपा हुआ है").forEach {
+            assertNull(it, parseNotification(f(title = "Mom", text = it), "WhatsApp")!!.preview)
+        }
+        assertEquals("घर कब आओगे?", parseNotification(f(title = "Mom", text = "घर कब आओगे?"), "WhatsApp")!!.preview)
+    }
+
+    @Test
+    fun hiddenNumbersAreAlwaysAnnounced() {
+        val d = CallDeduper(windowMs = 60_000)
+        assertTrue(d.shouldAnnounce(null, 0))
+        assertTrue(d.shouldAnnounce(null, 1_000))
+        assertTrue(d.shouldAnnounce("", 2_000))
+    }
+
+    @Test
+    fun readCallbackAlwaysFires() = runTest {
+        val c = coordinator()
+        var done = 0
+        c.read(999) { done++ } // nothing pending: fires immediately
+        assertEquals(1, done)
+        c.onMessage(msg("Mom", "Hi"))
+        runCurrent()
+        c.read(c.pending.value!!.id) { done++ }
+        runCurrent()
+        assertEquals(2, done)
+    }
 }

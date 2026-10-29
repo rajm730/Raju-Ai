@@ -2,10 +2,21 @@ package com.raju.aiassistant.data.tools
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.os.Build
+import android.provider.AlarmClock
+import android.provider.CalendarContract
+import android.telephony.SmsManager
+import android.view.KeyEvent
 import android.net.Uri
 import android.os.BatteryManager
 import android.provider.ContactsContract
@@ -17,11 +28,15 @@ import com.raju.aiassistant.domain.model.MusicService
 import com.raju.aiassistant.domain.tools.Contact
 import com.raju.aiassistant.domain.tools.ContactLookup
 import com.raju.aiassistant.domain.tools.DeviceTools
+import com.raju.aiassistant.domain.tools.MediaCommand
 import com.raju.aiassistant.domain.tools.ToolOutcome
+import com.raju.aiassistant.domain.tools.TravelMode
 import com.raju.aiassistant.domain.tools.normalizeForWhatsApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
+import java.text.DateFormat
+import java.util.Date
 
 /** Phone actions via public APIs and visible system UI only (dialer, launcher intents, settings screens). */
 class AndroidDeviceTools(private val context: Context) : DeviceTools {
@@ -31,7 +46,7 @@ class AndroidDeviceTools(private val context: Context) : DeviceTools {
 
     override suspend fun findContacts(query: String): ContactLookup {
         if (!granted(Manifest.permission.READ_CONTACTS)) {
-            return ContactLookup.NeedsPermission(Manifest.permission.READ_CONTACTS, "Raju AI needs Contacts access to find \"$query\". Contacts are read on this phone only and never uploaded.")
+            return ContactLookup.NeedsPermission(Manifest.permission.READ_CONTACTS, "Seema AI needs Contacts access to find \"$query\". Contacts are read on this phone only and never uploaded.")
         }
         return withContext(Dispatchers.IO) {
             try {
@@ -143,6 +158,111 @@ class AndroidDeviceTools(private val context: Context) : DeviceTools {
         return start(intent, "WhatsApp opened with your message. Review it and tap send yourself — nothing was sent automatically.", "Could not open WhatsApp.")
     }
 
+    override fun hasPermission(permission: String): Boolean = granted(permission)
+
+    override fun setTimer(seconds: Int, note: String): ToolOutcome {
+        val intent = Intent(AlarmClock.ACTION_SET_TIMER)
+            .putExtra(AlarmClock.EXTRA_LENGTH, seconds.coerceIn(1, 86_400))
+            .putExtra(AlarmClock.EXTRA_MESSAGE, note)
+            .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+        val shown = if (seconds >= 60) "${seconds / 60} min" + if (seconds % 60 != 0) " ${seconds % 60} sec" else "" else "$seconds sec"
+        return start(intent, "Timer set for $shown.", "No clock app accepted the timer.")
+    }
+
+    override fun setAlarm(hour: Int, minute: Int, note: String): ToolOutcome {
+        val intent = Intent(AlarmClock.ACTION_SET_ALARM)
+            .putExtra(AlarmClock.EXTRA_HOUR, hour)
+            .putExtra(AlarmClock.EXTRA_MINUTES, minute)
+            .putExtra(AlarmClock.EXTRA_MESSAGE, note)
+            .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+        return start(intent, "Alarm set for %02d:%02d.".format(hour, minute), "No clock app accepted the alarm.")
+    }
+
+    override fun setFlashlight(on: Boolean): ToolOutcome {
+        val cm = context.getSystemService(CameraManager::class.java) ?: return ToolOutcome.Failed("Camera service is not available.")
+        return try {
+            val id = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+                ?: return ToolOutcome.Failed("This phone has no flashlight.")
+            cm.setTorchMode(id, on)
+            ToolOutcome.Done("Flashlight is " + if (on) "on." else "off.")
+        } catch (e: CameraAccessException) {
+            ToolOutcome.Failed("Flashlight could not be changed (camera is in use).")
+        } catch (e: IllegalArgumentException) {
+            ToolOutcome.Failed("Flashlight could not be changed.")
+        }
+    }
+
+    override fun setVolume(percent: Int): ToolOutcome {
+        val am = context.getSystemService(AudioManager::class.java) ?: return ToolOutcome.Failed("Audio service is not available.")
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val target = (max * percent.coerceIn(0, 100) / 100f).toInt().coerceIn(0, max)
+        return try {
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
+            ToolOutcome.Done("Media volume set to about ${percent.coerceIn(0, 100)}%.")
+        } catch (e: SecurityException) {
+            ToolOutcome.Failed("Android did not allow changing the volume right now (Do Not Disturb?).")
+        }
+    }
+
+    override fun mediaControl(command: MediaCommand): ToolOutcome {
+        val am = context.getSystemService(AudioManager::class.java) ?: return ToolOutcome.Failed("Audio service is not available.")
+        val code = when (command) {
+            MediaCommand.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
+            MediaCommand.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
+            MediaCommand.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+            MediaCommand.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+        }
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        return ToolOutcome.Done("Sent \"${command.name.lowercase()}\" to the active music app. It only works if some app is playing or paused.")
+    }
+
+    @Suppress("DEPRECATION")
+    override fun sendSms(contact: Contact, text: String): ToolOutcome {
+        if (!granted(Manifest.permission.SEND_SMS)) return ToolOutcome.NeedsPermission(Manifest.permission.SEND_SMS, "SMS permission is required.")
+        val number = contact.number.filter { it.isDigit() || it == '+' }
+        if (number.length < 3) return ToolOutcome.Failed("\"${contact.number}\" is not a valid phone number.")
+        return try {
+            val sms = if (Build.VERSION.SDK_INT >= 31) context.getSystemService(SmsManager::class.java) else SmsManager.getDefault()
+            sms.sendMultipartTextMessage(number, null, sms.divideMessage(text), null, null)
+            ToolOutcome.Done("SMS handed to Android for ${contact.name} ($number). Delivery is not confirmed.")
+        } catch (e: Exception) {
+            ToolOutcome.Failed("SMS could not be sent: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome {
+        val intent = Intent(Intent.ACTION_INSERT)
+            .setData(CalendarContract.Events.CONTENT_URI)
+            .putExtra(CalendarContract.Events.TITLE, title)
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + durationMinutes.coerceIn(1, 24 * 60) * 60_000L)
+        if (!location.isNullOrBlank()) intent.putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+        val shown = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(startMillis))
+        return start(intent, "Calendar opened with \"$title\" on $shown. Tap Save there to add it (a reminder is added by your calendar app).", "No calendar app is installed.")
+    }
+
+    override fun navigate(destination: String, mode: TravelMode): ToolOutcome {
+        val q = Uri.encode(destination)
+        val mapsMode = when (mode) { TravelMode.DRIVE -> "d"; TravelMode.WALK -> "w"; TravelMode.BIKE -> "b"; TravelMode.TRANSIT -> "d" }
+        val webMode = when (mode) { TravelMode.DRIVE -> "driving"; TravelMode.WALK -> "walking"; TravelMode.BIKE -> "bicycling"; TravelMode.TRANSIT -> "transit" }
+        val ok = (mode != TravelMode.TRANSIT && isInstalled(MAPS_PKG) &&
+            tryStart(Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$q&mode=$mapsMode")).setPackage(MAPS_PKG))) ||
+            tryStart(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$q&travelmode=$webMode"))) ||
+            tryStart(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$q")))
+        return if (ok) ToolOutcome.Done("Directions to \"$destination\" opened.") else ToolOutcome.Failed("No maps app or browser could open directions.")
+    }
+
+    override fun copyToClipboard(text: String): ToolOutcome {
+        val cm = context.getSystemService(ClipboardManager::class.java) ?: return ToolOutcome.Failed("Clipboard is not available.")
+        return try {
+            cm.setPrimaryClip(ClipData.newPlainText("Seema AI", text))
+            ToolOutcome.Done("Copied to clipboard (${text.length} characters).")
+        } catch (e: RuntimeException) {
+            ToolOutcome.Failed("Could not copy to the clipboard.")
+        }
+    }
+
     private fun isInstalled(pkg: String): Boolean = try {
         context.packageManager.getPackageInfo(pkg, 0); true
     } catch (e: PackageManager.NameNotFoundException) {
@@ -159,4 +279,8 @@ class AndroidDeviceTools(private val context: Context) : DeviceTools {
 
     private fun start(intent: Intent, success: String, failure: String): ToolOutcome =
         if (tryStart(intent)) ToolOutcome.Done(success) else ToolOutcome.Failed(failure)
+
+    private companion object {
+        const val MAPS_PKG = "com.google.android.apps.maps"
+    }
 }

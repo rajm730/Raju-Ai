@@ -1,5 +1,8 @@
 package com.raju.aiassistant.domain.assistant
 
+import com.raju.aiassistant.domain.tools.MediaCommand
+import com.raju.aiassistant.domain.tools.TravelMode
+import java.time.LocalDateTime
 import com.raju.aiassistant.domain.model.MusicService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -41,5 +44,81 @@ class ActionParserTest {
     @Test
     fun unknownSettingsPageFallsBackToGeneral() {
         assertEquals(AssistantAction.OpenSettings(SettingsPage.GENERAL), parseReply("""<action>{"type":"open_settings","page":"???"}</action>""").actions.single())
+    }
+
+    @Test
+    fun parsesPersonalUseActions() {
+        val raw = listOf(
+            """{"type":"set_timer","minutes":2}""",
+            """{"type":"set_alarm","hour":6,"minute":30,"label":"uthna"}""",
+            """{"type":"flashlight","state":"off"}""",
+            """{"type":"volume","percent":60}""",
+            """{"type":"media","command":"next"}""",
+        ).joinToString("") { "<action>$it</action>" }
+        assertEquals(
+            listOf(
+                AssistantAction.SetTimer(120, ""),
+                AssistantAction.SetAlarm(6, 30, "uthna"),
+                AssistantAction.Flashlight(false),
+                AssistantAction.Volume(60),
+                AssistantAction.Media(MediaCommand.NEXT),
+            ),
+            parseReply(raw).actions,
+        )
+    }
+
+    @Test
+    fun rejectsOutOfRangeAndIncompleteActions() {
+        val raw = listOf(
+            """{"type":"set_timer","seconds":0}""",
+            """{"type":"set_alarm","hour":25}""",
+            """{"type":"volume","percent":150}""",
+            """{"type":"sms","text":"hi"}""",
+            """{"type":"media","command":"explode"}""",
+        ).joinToString("") { "<action>$it</action>" }
+        assertTrue(parseReply(raw).actions.isEmpty())
+        assertEquals(
+            AssistantAction.Sms("Mom", null, "Late aaunga"),
+            parseReply("""<action>{"type":"sms","contact":"Mom","text":"Late aaunga"}</action>""").actions.single(),
+        )
+    }
+
+    @Test
+    fun acceptsNumbersInAnyJsonShape() {
+        val raw = listOf(
+            """{"type":"set_timer","minutes":1.5}""",
+            """{"type":"set_alarm","hour":"7","minute":5.0}""",
+            """{"type":"volume","percent":"40"}""",
+            """{"type":"torch","state":"false"}""",
+        ).joinToString("") { "<action>$it</action>" }
+        assertEquals(
+            listOf(AssistantAction.SetTimer(90, ""), AssistantAction.SetAlarm(7, 5, ""), AssistantAction.Volume(40), AssistantAction.Flashlight(false)),
+            parseReply(raw).actions,
+        )
+    }
+
+    @Test
+    fun parsesCalendarNavigationAndCopy() {
+        val raw = listOf(
+            """{"type":"add_event","title":"Meeting","start":"2026-10-30 17:00","location":"Office"}""",
+            """{"type":"navigate","destination":"India Gate","mode":"walk"}""",
+            """{"type":"copy","text":"OK"}""",
+            """{"type":"add_event","title":"Bad","start":"kal"}""",
+        ).joinToString("") { "<action>$it</action>" }
+        assertEquals(
+            listOf(
+                AssistantAction.AddEvent("Meeting", LocalDateTime.of(2026, 10, 30, 17, 0), 30, "Office"),
+                AssistantAction.Navigate("India Gate", TravelMode.WALK),
+                AssistantAction.CopyText("OK"),
+            ),
+            parseReply(raw).actions,
+        )
+    }
+
+    @Test
+    fun sharedTextIsWrappedAndTrimmed() {
+        val request = buildSharedTextRequest("x".repeat(MAX_SHARED_CHARS + 50), "News")
+        assertTrue(request.contains("Subject: News"))
+        assertTrue(request.length < MAX_SHARED_CHARS + 400)
     }
 }

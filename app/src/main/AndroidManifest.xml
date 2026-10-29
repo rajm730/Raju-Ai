@@ -14,6 +14,10 @@
     <!-- Only used if the user turns on "Direct calling"; otherwise the dialer is opened. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 
+    <!-- Personal-use extras: SMS (asked at first use, every SMS is confirmed) and timers/alarms (normal permission). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
@@ -43,6 +47,7 @@
         <package android:name="com.whatsapp.w4b" />
         <package android:name="com.spotify.music" />
         <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 
     <application
@@ -59,11 +64,18 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.RajuAI">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Share text from any app → "Seema AI" summarises it in Chat. -->
+            <intent-filter android:label="@string/share_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

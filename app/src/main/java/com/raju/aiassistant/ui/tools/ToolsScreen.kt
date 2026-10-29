@@ -69,7 +69,7 @@ fun ToolsScreen(onOpenChat: () -> Unit = {}, viewModel: ToolsViewModel = viewMod
         item {
             HudPanel(title = "Memory") {
                 Text(
-                    "Things Raju AI remembers about you. Only saved when you ask or approve. Passwords, PINs, OTPs, card numbers and keys are never saved.",
+                    "Things Seema AI remembers about you. Only saved when you ask or approve. Passwords, PINs, OTPs, card numbers and keys are never saved.",
                     style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
                 )
                 InputAction("Add memory", "e.g. Mom's birthday is 5 May", buttonLabel = "Save") { viewModel.addMemory(it) }

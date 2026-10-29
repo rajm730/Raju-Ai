@@ -56,7 +56,7 @@ fun reactorStyleFor(state: AssistantState): ReactorStyle = when (state) {
 
 /** Short bilingual hint shown under the reactor. */
 fun statusHintFor(state: AssistantState): String = when (state) {
-    AssistantState.Idle -> "Ready — tap Chat to type (voice comes in Phase 4)"
+    AssistantState.Idle -> "Ready — tap Voice to speak or Chat to type"
     AssistantState.Listening -> "सुन रही हूँ… Listening"
     AssistantState.Thinking -> "सोच रही हूँ… Thinking"
     AssistantState.Speaking -> "बोल रही हूँ… Speaking"

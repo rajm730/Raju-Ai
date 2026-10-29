@@ -1,5 +1,8 @@
 package com.raju.aiassistant.ui.navigation
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -9,7 +12,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -19,6 +24,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
 import com.raju.aiassistant.RajuApp
+import com.raju.aiassistant.ui.LaunchRequest
 import com.raju.aiassistant.ui.assistant.AnnouncementPrompt
 import com.raju.aiassistant.ui.assistant.AssistantDialogs
 import com.raju.aiassistant.ui.chat.ChatScreen
@@ -40,6 +46,30 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
             launchSingleTop = true
             restoreState = true
+        }
+    }
+
+    // Home-screen shortcuts and text shared from other apps (see MainActivity).
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) container.engine.startVoice()
+    }
+    val launch by container.launchRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(launch) {
+        val request = launch ?: return@LaunchedEffect
+        container.launchRequests.value = null
+        runCatching {
+            when (request) {
+                LaunchRequest.Voice -> {
+                    navigateTo(Destination.Home)
+                    if (container.voiceInput.hasPermission()) container.engine.startVoice()
+                    else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+                LaunchRequest.Chat -> navigateTo(Destination.Chat)
+                is LaunchRequest.Ask -> {
+                    navigateTo(Destination.Chat)
+                    container.engine.submit(request.text)
+                }
+            }
         }
     }
 

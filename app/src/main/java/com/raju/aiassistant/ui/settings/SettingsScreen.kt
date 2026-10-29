@@ -151,7 +151,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             )
             if (!diag.listenerEnabled) {
                 Text(
-                    "If the Raju AI switch is greyed out or won't turn on: Android blocks this for apps installed from an APK file. Open App info → ⋮ (top right) → \"Allow restricted settings\" → confirm, then come back and switch it on.",
+                    "If the Seema AI switch is greyed out or won't turn on: Android blocks this for apps installed from an APK file. Open App info → ⋮ (top right) → \"Allow restricted settings\" → confirm, then come back and switch it on.",
                     style = MaterialTheme.typography.bodyMedium, color = WarningAmber,
                 )
                 OutlinedButton(onClick = { appInfo() }) { Text("Open App info") }
@@ -264,7 +264,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
         HudPanel(title = "Notifications & WhatsApp") {
             StatusChip(if (notificationAccess) "Notification access: on" else "Notification access: off", if (notificationAccess) SuccessGreen else WarningAmber)
             Text(
-                "With access on, Raju AI can read aloud the sender and preview that a notification shows, only for the apps you pick. It cannot read WhatsApp's chats or send messages by itself; replies open WhatsApp for you to send. Message text is never logged or saved.",
+                "With access on, Seema AI can read aloud the sender and preview that a notification shows, only for the apps you pick. It cannot read WhatsApp's chats or send messages by itself; replies open WhatsApp for you to send. Message text is never logged or saved.",
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
             OutlinedButton(onClick = { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) {
@@ -284,7 +284,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
         // ---------------------------------------------------------------- calls
         HudPanel(title = "Incoming calls") {
             Text(
-                "Raju AI can say who is calling on your SIM. Android allows this only for the app you choose as \"call screening\" app. Raju AI never blocks, answers, rejects or records calls. The name comes from your Contacts; unknown callers are not guessed.",
+                "Seema AI can say who is calling on your SIM. Android allows this only for the app you choose as \"call screening\" app. Seema AI never blocks, answers, rejects or records calls. The name comes from your Contacts; unknown callers are not guessed.",
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
             ToggleRow("Announce incoming calls", s.announceCalls) { on ->
@@ -305,7 +305,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             ToggleRow("Pause assistant (stops announcements and continuous listening)", s.assistantPaused, viewModel::setPaused)
             ToggleRow("Safety Mode (for payment & banking apps)", s.safetyMode, viewModel::setSafetyMode)
             Text(
-                "Safety Mode pauses notification announcements and blocks assistant-started calls, WhatsApp, app launches and music. Raju AI never reads or touches Google Pay, PhonePe or banking screens either way. Turn it off here to resume.",
+                "Safety Mode pauses notification announcements and blocks assistant-started calls, SMS, WhatsApp, app launches and music. Seema AI never reads or touches Google Pay, PhonePe or banking screens either way. Turn it off here to resume.",
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
         }
@@ -330,7 +330,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
         }
 
         HudPanel(title = "About") {
-            Text("Raju AI Assistant ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+            Text("Seema AI Assistant ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
             Text("AI answers can be wrong — check important information.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
     }

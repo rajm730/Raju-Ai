@@ -33,7 +33,7 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
 
     override fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit) {
         if (!hasPermission()) {
-            onError(VoiceError("Microphone permission is needed for voice. Allow it when asked, or in Settings → Apps → Raju AI → Permissions.", permissionDenied = true))
+            onError(VoiceError("Microphone permission is needed for voice. Allow it when asked, or in Settings → Apps → Seema AI → Permissions.", permissionDenied = true))
             return
         }
         stop()
