@@ -181,9 +181,10 @@ class ProvidersTest {
             {"model_id":"eleven_monolingual_v1","can_do_text_to_speech":true,"languages":[{"language_id":"en","name":"English"}]}]""")
         val models = ElevenLabsClient(http, "xi", url).listModels() as AiResult.Success
         assertEquals(listOf("eleven_multilingual_v2"), models.value.map { it.first })
-        enqueue(200, """{"voices":[{"voice_id":"a","name":"Sarah","labels":{"gender":"female","accent":"american"}},{"voice_id":"b","name":"Adam","labels":{"gender":"male"}}],"has_more":false,"total_count":2}""")
+        enqueue(200, """{"voices":[{"voice_id":"a","name":"Sarah","category":"premade","labels":{"gender":"female","accent":"american"}},{"voice_id":"b","name":"Adam","labels":{"gender":"male"}},{"voice_id":"c","name":"Tara","category":"professional","labels":{"gender":"female"}}],"has_more":false,"total_count":3}""")
         val voices = ElevenLabsClient(http, "xi", url).listVoices() as AiResult.Success
-        assertEquals(listOf(true, false), voices.value.map { it.female })
+        assertEquals(listOf(true, false, true), voices.value.map { it.female })
+        assertEquals(listOf(false, false, true), voices.value.map { it.paidOnly }) // library voice needs a paid plan
         assertEquals("american", voices.value.first().detail)
     }
 

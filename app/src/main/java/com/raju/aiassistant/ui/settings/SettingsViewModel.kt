@@ -26,6 +26,7 @@ import com.raju.aiassistant.domain.ai.pickDefaultModel
 import com.raju.aiassistant.domain.model.ConnectionTest
 import com.raju.aiassistant.domain.model.MusicService
 import com.raju.aiassistant.domain.model.SecretId
+import com.raju.aiassistant.domain.model.Personality
 import com.raju.aiassistant.domain.model.SttEngine
 import com.raju.aiassistant.domain.model.TtsEngine
 import com.raju.aiassistant.domain.voice.CloudVoice
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -305,6 +307,11 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     fun setSpeechLanguage(v: String) = launch { repo.setSpeechLanguage(v) }
     fun setAutoSpeak(v: Boolean) = launch { repo.setAutoSpeak(v) }
     fun setContinuous(v: Boolean) = launch { repo.setContinuous(v) }
+    fun setAutoListen(v: Boolean) = launch {
+        repo.setAutoListen(v)
+        if (!v) c.engine.stop()
+    }
+    fun setPersonality(v: Personality) = launch { repo.setPersonality(v) }
     fun setAnnounce(v: Boolean) = launch { repo.setAnnounce(v) }
     fun setAnnounceApp(pkg: String, v: Boolean) = launch { repo.setAnnounceApp(pkg, v) }
     fun setAskBeforeReading(v: Boolean) = launch { repo.setAskBeforeReading(v) }
@@ -320,7 +327,12 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     }
     fun setPaused(v: Boolean) = launch {
         repo.setAssistantPaused(v)
-        if (v) c.stopEverything()
+        if (v) {
+            c.stopEverything()
+        } else {
+            val s = c.currentSettings.first { !it.assistantPaused }
+            if (s.autoListen && c.voiceInput.hasPermission()) c.engine.startHandsFree()
+        }
     }
     fun setLowPowerMode(v: Boolean) = launch { repo.setLowPowerMode(v) }
     fun setReducedMotion(v: Boolean) = launch { repo.setReducedMotion(v) }

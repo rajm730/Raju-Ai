@@ -35,6 +35,16 @@ class PromptAndTextTest {
         val p = buildSystemPrompt(listOf("Mom's name is Sita"), "today")
         assertTrue(p.contains("\"type\":\"call\""))
         assertTrue(p.contains("Mom's name is Sita"))
+        assertTrue(p.contains("Devanagari")) // Hindi in, Hindi script out
+        assertTrue(p.contains("ACT, DON'T ASK"))
+    }
+
+    @Test
+    fun personalityChangesOnlyTheTone() {
+        val masti = buildSystemPrompt(emptyList(), "today", com.raju.aiassistant.domain.model.Personality.MASTI)
+        val pro = buildSystemPrompt(emptyList(), "today", com.raju.aiassistant.domain.model.Personality.PRO)
+        assertTrue(masti.contains("witty") && !pro.contains("witty"))
+        assertTrue(pro.contains("HONESTY") && masti.contains("HONESTY"))
     }
 
     @Test

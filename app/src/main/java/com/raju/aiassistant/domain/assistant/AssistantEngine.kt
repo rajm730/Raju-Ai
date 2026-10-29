@@ -39,6 +39,10 @@ data class PendingRequest(
     enum class Kind { PERMISSION, CONFIRM }
 }
 
+private const val DAY_MS = 24 * 60 * 60_000L
+/** Consecutive recogniser errors (not silence) tolerated in hands-free mode before it stops. */
+private const val MAX_LISTEN_FAILURES = 3
+
 sealed interface Decision {
     /** Approve; [option] is the chosen contact when [PendingRequest.options] is not empty. */
     data class Approve(val option: Contact? = null) : Decision
@@ -93,6 +97,14 @@ class AssistantEngine(
     private val warnedModels = mutableSetOf<String>()
     private var decision: CompletableDeferred<Decision>? = null
     private var localId = -1L
+    private var lastVoiceNote: String? = null
+
+    /** Hands-free mode: keep listening (also after silence) until stop() is called. */
+    private var handsFree = false
+    private var listenFailures = 0
+    private val _handsFreeActive = MutableStateFlow(false)
+    /** True while the assistant is in hands-free (always listening) mode. */
+    val handsFreeActive: StateFlow<Boolean> = _handsFreeActive.asStateFlow()
 
     /** Loads saved chat history into the transcript (call once at startup). */
     suspend fun load() {
@@ -109,6 +121,8 @@ class AssistantEngine(
         if (trimmed.isEmpty()) return
         // One user submission → one request: ignore an identical message sent again within a moment.
         if (!submitGuard.accept(trimmed, clock())) return
+        if (!fromVoice) voice.stop() // typed while listening: don't also take a voice result
+        if (fromVoice) listenFailures = 0
         cancelWork()
         lastUserText = trimmed
         job = scope.launch { handleUserMessage(trimmed, fromVoice) }
@@ -136,24 +150,64 @@ class AssistantEngine(
         listen()
     }
 
+    /**
+     * Hands-free mode: listen now and keep listening after every reply and after silence, until
+     * [stop] is pressed (or the app goes to the background → [suspendListening]).
+     */
+    fun startHandsFree() {
+        handsFree = true
+        _handsFreeActive.value = true
+        listenFailures = 0
+        if (settings.value.assistantPaused) return
+        val busy = _state.value == AssistantState.Thinking || _state.value == AssistantState.Speaking || _state.value == AssistantState.Executing
+        if (!_voiceSession.value && !busy && _pending.value == null) startVoice()
+    }
+
+    /** App went to the background: release the microphone. Hands-free resumes with [startHandsFree]. */
+    fun suspendListening() {
+        if (!_voiceSession.value) return
+        _voiceSession.value = false
+        voice.stop()
+        if (_state.value == AssistantState.Listening) _state.value = AssistantState.Idle
+    }
+
     private fun listen() {
         _state.value = AssistantState.Listening
         voice.start(
             settings.value.speechLanguage,
             onResult = { heard -> submit(heard, fromVoice = true) },
             onError = { err ->
-                _voiceSession.value = false
-                if (err.noSpeech) {
-                    _state.value = AssistantState.Idle
+                val keepGoing = handsFree && _voiceSession.value && !settings.value.assistantPaused && !err.permissionDenied
+                if (keepGoing && err.noSpeech) {
+                    // Silence is normal in hands-free mode: just listen again.
+                    relisten(300)
+                } else if (keepGoing && listenFailures < MAX_LISTEN_FAILURES) {
+                    listenFailures++
+                    relisten(2_000)
                 } else {
-                    failAsync(err.message)
+                    _voiceSession.value = false
+                    if (!err.noSpeech) {
+                        // A real problem (no permission, recogniser keeps failing): leave hands-free mode.
+                        handsFree = false
+                        _handsFreeActive.value = false
+                    }
+                    if (err.noSpeech) _state.value = AssistantState.Idle else failAsync(err.message)
                 }
             },
         )
     }
 
+    private fun relisten(delayMs: Long) {
+        scope.launch {
+            delay(delayMs)
+            if (handsFree && _voiceSession.value && _state.value == AssistantState.Listening) listen()
+        }
+    }
+
     /** Stop button: immediately stops listening, speech, pending questions and any running request. */
     fun stop() {
+        handsFree = false
+        _handsFreeActive.value = false
         _voiceSession.value = false
         voice.stop()
         speaker.stop()
@@ -201,7 +255,7 @@ class AssistantEngine(
         }
         _state.value = AssistantState.Thinking
         val memoryTexts = if (s.memoryEnabled) runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()) else emptyList()
-        val system = buildSystemPrompt(memoryTexts, nowDescription())
+        val system = buildSystemPrompt(memoryTexts, nowDescription(), s.personality)
         val turns = toTurns(_transcript.value, s.historyLimit * 2, ModelAdvice.historyCharBudget(model))
 
         val raw = when (val r = provider.chat(model, system, turns)) {
@@ -238,7 +292,7 @@ class AssistantEngine(
 
     private fun finishTurn() {
         val s = settings.value
-        if (_voiceSession.value && s.continuousConversation && !s.assistantPaused) {
+        if (_voiceSession.value && (s.continuousConversation || handsFree) && !s.assistantPaused) {
             listen()
         } else {
             _voiceSession.value = false
@@ -250,7 +304,9 @@ class AssistantEngine(
     private suspend fun say(text: String) {
         _state.value = AssistantState.Speaking
         val result = speaker.speak(speakableText(text))
-        if (result.error != null) note("Voice: ${result.error}")
+        // The same fallback reason (e.g. "ElevenLabs failed …") is shown once, not under every reply.
+        if (result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
+        lastVoiceNote = result.error
         _state.value = AssistantState.Thinking
     }
 
@@ -340,12 +396,18 @@ class AssistantEngine(
     }
 
     private suspend fun addEvent(action: AssistantAction.AddEvent) {
-        val startMillis = runCatching { action.start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+        val zone = ZoneId.systemDefault()
+        var start = action.start
+        fun millis() = runCatching { start.atZone(zone).toInstant().toEpochMilli() }.getOrNull()
+        // "8 baje class" said after 8 o'clock today means tomorrow: a time that passed in the last day moves forward one day.
+        val first = millis()
+        if (first != null && first < clock() - 5 * 60_000L && first > clock() - DAY_MS) start = start.plusDays(1)
+        val startMillis = millis()
         if (startMillis == null || startMillis < clock() - 5 * 60_000L) {
             report(action, ActionStatus.FAILED, "The event time ${action.start} is in the past or invalid, so the calendar was not opened. Please say the date and time again.")
             return
         }
-        report(action, tools.addCalendarEvent(action.title, startMillis, action.durationMinutes, action.location))
+        report(action, tools.addCalendarEvent(action.title, startMillis, action.durationMinutes, action.location, action.repeat?.rrule))
     }
 
     private suspend fun whatsApp(action: AssistantAction.WhatsApp) {
@@ -498,6 +560,13 @@ class AssistantEngine(
         _state.value = state
         _voiceSession.value = false
         scheduleErrorReset()
+        if (handsFree && !settings.value.assistantPaused && voice.isAvailable()) {
+            // Hands-free: show the error, then go back to listening.
+            scope.launch {
+                delay(4_500)
+                if (handsFree && !_voiceSession.value && job?.isActive != true && _pending.value == null) startVoice()
+            }
+        }
     }
 
     /** Error is shown briefly, then the reactor returns to Ready. */

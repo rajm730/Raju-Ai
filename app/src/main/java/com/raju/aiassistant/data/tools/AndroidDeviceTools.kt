@@ -231,15 +231,22 @@ class AndroidDeviceTools(private val context: Context) : DeviceTools {
         }
     }
 
-    override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome {
+    override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?, rrule: String?): ToolOutcome {
         val intent = Intent(Intent.ACTION_INSERT)
             .setData(CalendarContract.Events.CONTENT_URI)
             .putExtra(CalendarContract.Events.TITLE, title)
             .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
             .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startMillis + durationMinutes.coerceIn(1, 24 * 60) * 60_000L)
         if (!location.isNullOrBlank()) intent.putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+        if (!rrule.isNullOrBlank()) intent.putExtra(CalendarContract.Events.RRULE, rrule)
         val shown = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(startMillis))
-        return start(intent, "Calendar opened with \"$title\" on $shown. Tap Save there to add it (a reminder is added by your calendar app).", "No calendar app is installed.")
+        val repeats = when {
+            rrule.isNullOrBlank() -> ""
+            rrule.contains("BYDAY") -> " (Mon–Fri)"
+            rrule.contains("DAILY") -> " (every day)"
+            else -> " (every week)"
+        }
+        return start(intent, "Calendar opened with \"$title\" on $shown$repeats. Tap Save there to add it (a reminder is added by your calendar app).", "No calendar app is installed.")
     }
 
     override fun navigate(destination: String, mode: TravelMode): ToolOutcome {

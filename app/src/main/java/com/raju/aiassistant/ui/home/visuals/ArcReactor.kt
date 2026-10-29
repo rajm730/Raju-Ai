@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -96,6 +97,28 @@ fun ArcReactor(
             )
         }
 
+        if (richEffects) {
+            // Radar sweep: a soft wedge of light circling the reactor.
+            rotate(t * 70f, c) {
+                drawCircle(
+                    brush = Brush.sweepGradient(
+                        0f to Color.Transparent, 0.82f to Color.Transparent, 0.97f to primary.copy(alpha = 0.22f * glow), 1f to Color.Transparent,
+                        center = c,
+                    ),
+                    radius = r * 0.98f,
+                    center = c,
+                )
+            }
+            // Outer HUD ring: thin dashes plus four brackets turning the other way.
+            rotate(-t * 9f, c) {
+                drawSegmentedRing(c, r * 0.995f, r * 0.006f, segments = 90, gapDegrees = 2.2f, brush = ringBrush, alpha = 0.45f * flicker)
+            }
+            rotate(t * 14f, c) {
+                repeat(4) { i -> drawArcAround(c, r * 0.965f, i * 90f + 20f, 28f, accent.copy(alpha = 0.75f * flicker), r * 0.014f) }
+            }
+            drawComets(t, c, r, palette, flicker)
+        }
+
         // Everything below beats: the whole reactor swells slightly on each pulse
         scale(1f + 0.06f * beat, pivot = c) {
             if (richEffects) {
@@ -126,8 +149,28 @@ fun ArcReactor(
             }
             drawCircle(ringBrush, radius = r * 0.4f, center = c, alpha = 0.85f * flicker, style = Stroke(width = r * 0.018f))
 
+            if (richEffects) drawEnergyArcs(t, c, r, palette, energy, beat)
+
+            // Palladium triangle turning inside the core ring, like the classic reactor.
+            rotate(-spin * 0.5f, c) { drawTriangle(c, r * 0.36f, ringBrush, r * 0.022f, 0.75f * flicker) }
+            rotate(spin * 0.8f + 60f, c) { drawTriangle(c, r * 0.30f, ringBrush, r * 0.010f, 0.45f * flicker) }
+
             // Heart core
             val coreR = r * (0.25f + 0.07f * beat)
+            if (richEffects) {
+                // Light rays bursting from the core on each beat.
+                repeat(16) { i ->
+                    val a = Math.toRadians((i * 22.5f + spin * 0.2f).toDouble())
+                    val len = r * (0.30f + 0.12f * beat * pseudoRandom(i + 3))
+                    drawLine(
+                        color = primary.copy(alpha = (0.10f + 0.25f * beat) * flicker),
+                        start = Offset(c.x + coreR * 0.6f * cos(a).toFloat(), c.y + coreR * 0.6f * sin(a).toFloat()),
+                        end = Offset(c.x + len * cos(a).toFloat(), c.y + len * sin(a).toFloat()),
+                        strokeWidth = r * 0.006f,
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
             drawCircle(
                 brush = Brush.radialGradient(
                     listOf(Color.White.copy(alpha = 0.95f * energy), primary.copy(alpha = 0.9f * energy), accent.copy(alpha = 0.4f * energy), Color.Transparent),
@@ -188,4 +231,59 @@ private fun DrawScope.drawArcAround(c: Offset, radius: Float, startAngle: Float,
         size = Size(radius * 2, radius * 2),
         style = Stroke(width = width, cap = StrokeCap.Round),
     )
+}
+
+/** Three bright comets with fading tails orbiting just inside the rim. */
+private fun DrawScope.drawComets(t: Float, c: Offset, r: Float, palette: List<Color>, flicker: Float) {
+    repeat(3) { i ->
+        val dir = if (i == 1) -1f else 1f
+        val head = i * 120f + dir * t * (38f + i * 9f)
+        val radius = r * (0.93f - i * 0.025f)
+        repeat(10) { k ->
+            val a = Math.toRadians((head - dir * k * 2.6f).toDouble())
+            val fade = 1f - k / 10f
+            drawCircle(
+                color = (if (k == 0) Color.White else palette[(i + 1) % palette.size]).copy(alpha = 0.85f * fade * flicker),
+                radius = r * 0.012f * (0.35f + 0.65f * fade),
+                center = Offset(c.x + radius * cos(a).toFloat(), c.y + radius * sin(a).toFloat()),
+            )
+        }
+    }
+}
+
+/** Crackling energy arcs between the core ring and the coil, re-drawn a few times a second. */
+private fun DrawScope.drawEnergyArcs(t: Float, c: Offset, r: Float, palette: List<Color>, energy: Float, beat: Float) {
+    val frame = (t * 12f).toInt()
+    val bolts = 4 + (beat * 3f).toInt()
+    repeat(bolts) { b ->
+        val seed = frame * 97 + b * 13
+        if (pseudoRandom(seed) < 0.25f) return@repeat // not every bolt fires every frame
+        val base = pseudoRandom(seed + 1) * 360f
+        val path = Path()
+        val steps = 6
+        for (k in 0..steps) {
+            val f = k / steps.toFloat()
+            val rr = r * (0.42f + 0.2f * f)
+            val jitter = (pseudoRandom(seed + 10 + k) - 0.5f) * 14f
+            val a = Math.toRadians((base + jitter).toDouble())
+            val x = c.x + rr * cos(a).toFloat()
+            val y = c.y + rr * sin(a).toFloat()
+            if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        val color = palette[b % palette.size]
+        drawPath(path, color.copy(alpha = 0.25f * energy), style = Stroke(width = r * 0.018f, cap = StrokeCap.Round))
+        drawPath(path, Color.White.copy(alpha = 0.7f * energy), style = Stroke(width = r * 0.005f, cap = StrokeCap.Round))
+    }
+}
+
+private fun DrawScope.drawTriangle(c: Offset, radius: Float, brush: Brush, width: Float, alpha: Float) {
+    val path = Path()
+    repeat(3) { i ->
+        val a = Math.toRadians((i * 120.0) - 90.0)
+        val x = c.x + radius * cos(a).toFloat()
+        val y = c.y + radius * sin(a).toFloat()
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    drawPath(path, brush, alpha = alpha.coerceIn(0f, 1f), style = Stroke(width = width, cap = StrokeCap.Round))
 }

@@ -4,7 +4,6 @@ import android.Manifest
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,8 +23,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -40,8 +41,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +61,7 @@ import com.raju.aiassistant.domain.model.AssistantState
 import com.raju.aiassistant.ui.RajuViewModelFactory
 import com.raju.aiassistant.ui.components.StatusChip
 import com.raju.aiassistant.ui.home.visuals.ArcReactor
+import com.raju.aiassistant.ui.home.visuals.CyberBackground
 import com.raju.aiassistant.ui.home.visuals.motionProfileFor
 import com.raju.aiassistant.ui.home.visuals.reactorStyleFor
 import com.raju.aiassistant.ui.home.visuals.rememberAnimationTime
@@ -100,17 +100,34 @@ fun HomeScreen(
         } else realLevel.value
     }
 
-    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) viewModel.startVoice()
+    val handsFreeMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.toggleHandsFree()
     }
     val onVoice = {
-        if (viewModel.hasMicPermission()) viewModel.startVoice() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        if (viewModel.hasMicPermission()) viewModel.toggleHandsFree() else handsFreeMic.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    val telemetry = {
+        listOf(
+            "SEEMA//CORE ${BuildConfig.VERSION_NAME.substringBefore('-')}",
+            "STATE  ${assistantState.label.uppercase()}",
+            "NET    ${if (state.online) "ONLINE" else "OFFLINE"}",
+            "AI     ${state.defaultProvider.shortName.uppercase()}${if (state.providerConnected) " OK" else ""}",
+            "VOICE  ${state.voiceEngine}",
+            "MIC    ${if (state.handsFree) "HANDS-FREE" else "STANDBY"} · ${state.listenEngine}",
+        )
     }
 
     var showPreview by rememberSaveable { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
-        HudBackground(ReactorCyan)
+        CyberBackground(
+            color = Color(style.primaryArgb),
+            accent = Color(style.paletteArgb[2]),
+            time = timeProvider,
+            density = if (!profile.animate) 0.35f else if (state.lowPowerMode) 0.3f else 0.62f,
+            telemetry = telemetry,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         Column(
             Modifier
@@ -121,13 +138,37 @@ fun HomeScreen(
         ) {
             Text("SEEMA AI", style = MaterialTheme.typography.headlineMedium, color = ReactorCyan)
 
+            if (state.paused) {
+                // Paused is easy to forget: show it clearly, with a one-tap way back.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "⏸ Assistant paused — not listening, no announcements",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = WarningAmber,
+                    )
+                    FilledTonalButton(onClick = viewModel::resume) { Text("Resume") }
+                }
+            }
+
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 StatusChip(assistantState.label, Color(style.primaryArgb))
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
-                StatusChip(if (state.listening) "Mic: listening" else "Mic: off", if (state.listening) SuccessGreen else TextSecondary)
+                StatusChip(
+                    when {
+                        state.listening -> "Mic: listening"
+                        state.handsFree -> "Mic: hands-free"
+                        else -> "Mic: off"
+                    },
+                    if (state.listening || state.handsFree) SuccessGreen else TextSecondary,
+                )
                 val provider = state.defaultProvider.shortName
                 when {
                     state.providerConnected && state.providerKeySaved -> StatusChip("$provider: connected", SuccessGreen)
@@ -195,9 +236,16 @@ fun HomeScreen(
 
             val busy = assistantState.isBusy || state.listening
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ControlButton("Voice", Icons.Filled.Mic, enabled = !state.listening, onClick = onVoice, modifier = Modifier.weight(1f))
+                ControlButton(
+                    if (state.handsFree) "Mic ON" else "Voice",
+                    if (state.handsFree) Icons.Filled.Mic else Icons.Filled.MicOff,
+                    enabled = true,
+                    onClick = onVoice,
+                    modifier = Modifier.weight(1f),
+                    highlighted = state.handsFree,
+                )
                 ControlButton("Chat", Icons.AutoMirrored.Filled.Chat, enabled = true, onClick = onOpenChat, modifier = Modifier.weight(1f))
-                ControlButton("Stop", Icons.Filled.Stop, enabled = busy || state.previewState != null, onClick = viewModel::stop, modifier = Modifier.weight(1f))
+                ControlButton("Stop", Icons.Filled.Stop, enabled = busy || state.handsFree || state.previewState != null, onClick = viewModel::stop, modifier = Modifier.weight(1f))
                 ControlButton("Settings", Icons.Filled.Settings, enabled = true, onClick = onOpenSettings, modifier = Modifier.weight(1f))
             }
         }
@@ -211,38 +259,21 @@ private fun ControlButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
 ) {
     FilledTonalButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.height(72.dp),
         contentPadding = PaddingValues(4.dp),
+        colors = if (highlighted) ButtonDefaults.filledTonalButtonColors(containerColor = SuccessGreen.copy(alpha = 0.25f), contentColor = SuccessGreen)
+        else ButtonDefaults.filledTonalButtonColors(),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
             Spacer(Modifier.height(2.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
-    }
-}
-
-/** Static HUD backdrop: soft vignette and a faint grid. Drawn once (no animation cost). */
-@Composable
-private fun HudBackground(color: Color) {
-    Canvas(Modifier.fillMaxSize()) {
-        drawRect(
-            Brush.radialGradient(
-                listOf(color.copy(alpha = 0.10f), Color.Transparent),
-                center = Offset(size.width / 2f, size.height * 0.45f),
-                radius = size.maxDimension * 0.6f,
-            )
-        )
-        val step = 32.dp.toPx()
-        val grid = color.copy(alpha = 0.04f)
-        var x = 0f
-        while (x < size.width) { drawLine(grid, Offset(x, 0f), Offset(x, size.height)); x += step }
-        var y = 0f
-        while (y < size.height) { drawLine(grid, Offset(0f, y), Offset(size.width, y)); y += step }
     }
 }
 

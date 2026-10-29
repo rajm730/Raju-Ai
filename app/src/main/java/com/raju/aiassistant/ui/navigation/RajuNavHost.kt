@@ -12,7 +12,17 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
@@ -49,9 +59,37 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
         }
     }
 
+    // Hands-free: listen as soon as the app is on screen, release the microphone when it is not.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    var askedMic by rememberSaveable { mutableStateOf(false) }
+    val handsFreeMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) container.engine.startHandsFree()
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> scope.launch {
+                    val s = container.settingsRepository.settings.first() // stored values, not the startup default
+                    if (s.autoListen && !s.assistantPaused) {
+                        if (container.voiceInput.hasPermission()) container.engine.startHandsFree()
+                        else if (!askedMic) {
+                            askedMic = true
+                            handsFreeMic.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> container.engine.suspendListening()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Home-screen shortcuts and text shared from other apps (see MainActivity).
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) container.engine.startVoice()
+        if (granted) container.engine.startHandsFree()
     }
     val launch by container.launchRequests.collectAsStateWithLifecycle()
     LaunchedEffect(launch) {
@@ -61,7 +99,7 @@ fun RajuNavHost(navController: NavHostController = rememberNavController()) {
             when (request) {
                 LaunchRequest.Voice -> {
                     navigateTo(Destination.Home)
-                    if (container.voiceInput.hasPermission()) container.engine.startVoice()
+                    if (container.voiceInput.hasPermission()) container.engine.startHandsFree()
                     else micPermission.launch(Manifest.permission.RECORD_AUDIO)
                 }
                 LaunchRequest.Chat -> navigateTo(Destination.Chat)

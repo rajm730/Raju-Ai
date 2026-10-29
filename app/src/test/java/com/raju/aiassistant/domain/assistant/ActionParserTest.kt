@@ -121,4 +121,13 @@ class ActionParserTest {
         assertTrue(request.contains("Subject: News"))
         assertTrue(request.length < MAX_SHARED_CHARS + 400)
     }
+
+    @Test
+    fun parsesRepeatingEvents() {
+        val a = parseReply("""<action>{"type":"add_event","title":"Class","start":"2026-10-30T08:00","repeat":"weekdays"}</action>""").actions.single() as AssistantAction.AddEvent
+        assertEquals(EventRepeat.WEEKDAYS, a.repeat)
+        assertEquals("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", a.repeat?.rrule)
+        val once = parseReply("""<action>{"type":"add_event","title":"Doctor","start":"2026-10-30T08:00","repeat":"sometimes"}</action>""").actions.single() as AssistantAction.AddEvent
+        assertEquals(null, once.repeat)
+    }
 }

@@ -56,8 +56,9 @@ class AssistantEngineTest {
         override val partial = MutableStateFlow("")
         var starts = 0
         var onResult: ((String) -> Unit)? = null
+        var onError: ((VoiceError) -> Unit)? = null
         override fun isAvailable() = true
-        override fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit) { starts++; this.onResult = onResult }
+        override fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit) { starts++; this.onResult = onResult; this.onError = onError }
         override fun stop() {}
     }
 
@@ -69,8 +70,10 @@ class AssistantEngineTest {
         override fun setTimer(seconds: Int, note: String): ToolOutcome { timers += seconds; return ToolOutcome.Done("Timer set") }
         override fun sendSms(contact: Contact, text: String): ToolOutcome { sms += contact.number to text; return ToolOutcome.Done("SMS sent") }
         val events = mutableListOf<Pair<String, Int>>()
-        override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome {
-            events += title to durationMinutes; return ToolOutcome.Done("Calendar opened")
+        val eventStarts = mutableListOf<Long>()
+        val eventRules = mutableListOf<String?>()
+        override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?, rrule: String?): ToolOutcome {
+            events += title to durationMinutes; eventStarts += startMillis; eventRules += rrule; return ToolOutcome.Done("Calendar opened")
         }
         override suspend fun findContacts(query: String) = contacts
         override fun dial(contact: Contact, direct: Boolean): ToolOutcome { dialed += contact; return ToolOutcome.Done("Dialer opened for ${contact.name}") }
@@ -346,5 +349,65 @@ class AssistantEngineTest {
         e.submit("battery kitni hai")
         settle()
         assertEquals(listOf("Dekhti hoon.", "Battery 80%"), speaker.spoken)
+    }
+
+    @Test
+    fun handsFreeKeepsListeningThroughSilenceUntilStop() = runTest {
+        val e = engine(AiResult.Success("Haan ji!"))
+        e.startHandsFree()
+        assertEquals(1, voice.starts)
+        assertTrue(e.handsFreeActive.value)
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        settle()
+        assertEquals(2, voice.starts) // listened again after silence
+        voice.onResult!!("kaise ho")
+        settle()
+        assertEquals(3, voice.starts) // and again after the reply, without continuous mode
+        assertEquals(AssistantState.Listening, e.state.value)
+        e.stop()
+        assertTrue(!e.handsFreeActive.value)
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        settle()
+        assertEquals(3, voice.starts)
+    }
+
+    @Test
+    fun handsFreeStopsOnPermissionProblems() = runTest {
+        val e = engine()
+        e.startHandsFree()
+        voice.onError!!(VoiceError("no mic", permissionDenied = true))
+        settle()
+        assertEquals(1, voice.starts)
+        assertTrue(!e.handsFreeActive.value)
+    }
+
+    @Test
+    fun sameVoiceFallbackNoteIsShownOnce() = runTest {
+        val failing = object : Speaker {
+            override val speaking = MutableStateFlow(false)
+            override val level = MutableStateFlow(0f)
+            override suspend fun speak(text: String) = SpeakResult(true, "Android", "ElevenLabs failed (402)")
+            override fun stop() {}
+        }
+        provider = FakeProvider(ArrayDeque(listOf(AiResult.Success("Ek."), AiResult.Success("Do."))))
+        val e = AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = failing, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
+        )
+        e.submit("ek")
+        settle()
+        e.submit("do")
+        settle()
+        assertEquals(1, e.transcript.value.count { it.text.startsWith("Voice:") })
+    }
+
+    @Test
+    fun repeatingEventIsPassedToTheCalendar() = runTest {
+        val e = engine(AiResult.Success("""<action>{"type":"add_event","title":"Class","start":"2030-01-01T08:00","repeat":"daily"}</action>"""))
+        e.submit("roz 8 baje class")
+        settle()
+        assertEquals(listOf("FREQ=DAILY"), tools.eventRules)
     }
 }

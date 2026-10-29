@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val assistantState: AssistantState = AssistantState.Idle,
@@ -28,9 +30,13 @@ data class HomeUiState(
     val reducedMotion: Boolean = false,
     val paused: Boolean = false,
     val safetyMode: Boolean = false,
+    /** Hands-free (always listening) mode is on. */
+    val handsFree: Boolean = false,
+    val voiceEngine: String = "",
+    val listenEngine: String = "",
 )
 
-private data class EngineView(val state: AssistantState, val listening: Boolean, val partial: String, val lastReply: String?)
+private data class EngineView(val state: AssistantState, val listening: Boolean, val partial: String, val lastReply: String?, val handsFree: Boolean)
 
 class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val engine = c.engine
@@ -38,8 +44,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     val speechLevel: StateFlow<Float> = engine.speechLevel
 
-    private val engineView = combine(engine.state, engine.listening, engine.partialTranscript, engine.transcript) { s, l, p, t ->
-        EngineView(s, l, p, t.lastOrNull { it.role == ChatRole.ASSISTANT }?.text)
+    private val engineView = combine(engine.state, engine.listening, engine.partialTranscript, engine.transcript, engine.handsFreeActive) { s, l, p, t, h ->
+        EngineView(s, l, p, t.lastOrNull { it.role == ChatRole.ASSISTANT }?.text, h)
     }
 
     val uiState: StateFlow<HomeUiState> =
@@ -59,6 +65,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 reducedMotion = settings.reducedMotion,
                 paused = settings.assistantPaused,
                 safetyMode = settings.safetyMode,
+                handsFree = ev.handsFree,
+                voiceEngine = settings.ttsEngine.label.substringBefore(" ").uppercase(),
+                listenEngine = settings.sttEngine.label.substringBefore(" ").uppercase(),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -66,6 +75,21 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun startVoice() {
         preview.value = null
         engine.startVoice()
+    }
+
+    /** Mic button: turns hands-free listening on, or off when it is already on. */
+    fun toggleHandsFree() {
+        preview.value = null
+        if (engine.handsFreeActive.value) c.stopEverything() else engine.startHandsFree()
+    }
+
+    /** "Resume" on the paused banner: un-pause, then listen hands-free if that is enabled. */
+    fun resume() {
+        viewModelScope.launch {
+            c.settingsRepository.setAssistantPaused(false)
+            val s = c.currentSettings.first { !it.assistantPaused }
+            if (s.autoListen && hasMicPermission()) engine.startHandsFree()
+        }
     }
 
     fun stop() {

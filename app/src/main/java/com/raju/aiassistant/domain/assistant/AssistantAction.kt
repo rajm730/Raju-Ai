@@ -62,8 +62,14 @@ sealed interface AssistantAction {
         override val label get() = "SMS to ${contact ?: number}"
     }
     /** [start] is local phone time; the calendar app opens pre-filled and the user saves it. */
-    data class AddEvent(val title: String, val start: LocalDateTime, val durationMinutes: Int, val location: String?) : AssistantAction {
-        override val label get() = "Calendar: $title @ $start"
+    data class AddEvent(
+        val title: String,
+        val start: LocalDateTime,
+        val durationMinutes: Int,
+        val location: String?,
+        val repeat: EventRepeat? = null,
+    ) : AssistantAction {
+        override val label get() = "Calendar: $title @ $start" + (repeat?.let { " (${it.name.lowercase()})" } ?: "")
     }
     data class Navigate(val destination: String, val mode: TravelMode) : AssistantAction {
         override val label get() = "Directions to $destination"
@@ -71,6 +77,13 @@ sealed interface AssistantAction {
     data class CopyText(val text: String) : AssistantAction {
         override val label get() = "Copy to clipboard"
     }
+}
+
+/** Repeat rule for a calendar event; [rrule] is the iCalendar RRULE Android's calendar understands. */
+enum class EventRepeat(val rrule: String) {
+    DAILY("FREQ=DAILY"),
+    WEEKDAYS("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"),
+    WEEKLY("FREQ=WEEKLY"),
 }
 
 data class ParsedReply(val text: String, val actions: List<AssistantAction>)
@@ -144,7 +157,13 @@ private fun parseAction(json: String): AssistantAction? {
             val title = str("title") ?: str("text")
             val start = str("start")?.let { parseLocalDateTime(it) }
             val minutes = int("duration_minutes")?.takeIf { it in 1..1440 } ?: 30
-            if (title == null || start == null) null else AssistantAction.AddEvent(title, start, minutes, str("location"))
+            val repeat = when (str("repeat")?.lowercase()) {
+                "daily", "roz", "everyday", "every_day" -> EventRepeat.DAILY
+                "weekdays", "weekday" -> EventRepeat.WEEKDAYS
+                "weekly", "every_week" -> EventRepeat.WEEKLY
+                else -> null
+            }
+            if (title == null || start == null) null else AssistantAction.AddEvent(title, start, minutes, str("location"), repeat)
         }
         "navigate", "directions" -> str("destination")?.let { d ->
             val mode = when (str("mode")?.lowercase()) {

@@ -61,7 +61,12 @@ class ElevenLabsTtsProvider(
             is AiResult.Success -> VoiceCatalog.bestDefault(r.value)?.also { rememberVoice(it) }?.id
             is AiResult.Failure -> null
         } ?: VoiceCatalog.ELEVEN_FALLBACK_VOICE
-        return wavOrFailure(client.synthesize(text, voice, s.elevenModel, rate), "ElevenLabs")
+        val result = client.synthesize(text, voice, s.elevenModel, rate)
+        // A Voice Library voice on the free plan → speak with a default voice instead of falling back to Android.
+        if (result is AiResult.Failure && voice != VoiceCatalog.ELEVEN_FALLBACK_VOICE && VoiceCatalog.isPaidVoiceError(result.message)) {
+            return wavOrFailure(client.synthesize(text, VoiceCatalog.ELEVEN_FALLBACK_VOICE, s.elevenModel, rate), "ElevenLabs")
+        }
+        return wavOrFailure(result, "ElevenLabs")
     }
 }
 

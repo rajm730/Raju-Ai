@@ -67,7 +67,10 @@ import com.raju.aiassistant.domain.model.MusicService
 import com.raju.aiassistant.domain.model.SARVAM_FEMALE_SPEAKERS
 import com.raju.aiassistant.domain.model.SPEECH_LANGUAGES
 import com.raju.aiassistant.domain.model.SecretId
+import com.raju.aiassistant.domain.model.Personality
+import com.raju.aiassistant.domain.model.SttEngine
 import com.raju.aiassistant.domain.model.TtsEngine
+import com.raju.aiassistant.domain.voice.VoiceCatalog
 import com.raju.aiassistant.ui.RajuViewModelFactory
 import com.raju.aiassistant.ui.components.HudPanel
 import com.raju.aiassistant.ui.components.StatusChip
@@ -183,6 +186,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
                 tts?.hindi == LanguageSupport.AVAILABLE,
                 if (tts != null && tts.hindi != LanguageSupport.AVAILABLE) "Install" to { open(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) } else null,
             )
+            val voiceKey = when (s.ttsEngine) {
+                TtsEngine.SARVAM -> SecretId.SARVAM_API_KEY
+                TtsEngine.ELEVENLABS -> SecretId.ELEVENLABS_API_KEY
+                TtsEngine.CARTESIA -> SecretId.CARTESIA_API_KEY
+                TtsEngine.DEEPGRAM -> SecretId.DEEPGRAM_API_KEY
+                TtsEngine.ANDROID -> null
+            }
+            val voiceKeySaved = voiceKey == null || state.secrets[voiceKey]?.configured == true
+            StatusRow(
+                "Seema's voice",
+                s.ttsEngine.label + if (voiceKeySaved) " · ready" else " · key not set (Android voice is used)",
+                voiceKeySaved,
+            )
+            val deepgramSaved = state.secrets[SecretId.DEEPGRAM_API_KEY]?.configured == true
+            StatusRow(
+                "Listening",
+                when {
+                    s.sttEngine == SttEngine.DEEPGRAM && deepgramSaved -> "Deepgram ${VoiceCatalog.sttOption(s.deepgramSttModel).title}" + if (s.autoListen) " · hands-free" else ""
+                    s.sttEngine == SttEngine.DEEPGRAM -> "Deepgram key not set — Google recogniser is used"
+                    else -> "Android / Google" + if (s.autoListen) " · hands-free" else ""
+                },
+                s.sttEngine != SttEngine.DEEPGRAM || deepgramSaved,
+            )
+            if (s.assistantPaused) StatusRow("Assistant", "paused — no listening or announcements", false, "Resume" to { viewModel.setPaused(false) })
             OutlinedButton(onClick = { open(Intent("com.android.settings.TTS_SETTINGS")) }) { Text("Android text-to-speech settings") }
         }
 
@@ -258,7 +285,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             Text("Speech input language", style = MaterialTheme.typography.titleMedium)
             ChipRow(SPEECH_LANGUAGES.map { it.first }, s.speechLanguage, { tag -> SPEECH_LANGUAGES.first { it.first == tag }.second }) { viewModel.setSpeechLanguage(it) }
             ToggleRow("Speak replies aloud", s.autoSpeakReplies, viewModel::setAutoSpeak)
+            ToggleRow("Hands-free: start listening when the app opens and keep listening until you press Stop", s.autoListen, viewModel::setAutoListen)
+            Text(
+                "The microphone is used only while Seema AI is on screen; it stops when you leave the app. Tip: Deepgram listening (above) is silent — the Google recogniser may beep each time it restarts.",
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
             ToggleRow("Continuous conversation (keeps listening after each reply while the app is open)", s.continuousConversation, viewModel::setContinuous)
+
+            Text("Personality", style = MaterialTheme.typography.titleMedium)
+            Personality.entries.forEach { p -> HintRadioRow(p.label, p.hint, s.personality == p) { viewModel.setPersonality(p) } }
         }
         SecretCard(SecretId.SARVAM_API_KEY, state.secrets[SecretId.SARVAM_API_KEY] ?: SecretStatus(), viewModel, title = "Sarvam AI voice key")
         SecretCard(SecretId.ELEVENLABS_API_KEY, state.secrets[SecretId.ELEVENLABS_API_KEY] ?: SecretStatus(), viewModel, title = "ElevenLabs voice key") {
