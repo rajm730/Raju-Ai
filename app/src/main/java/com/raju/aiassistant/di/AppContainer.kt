@@ -96,7 +96,7 @@ class AppContainer(context: Context) {
         )
     }
     /** What the assistant listens with: Android's recogniser or Deepgram, as chosen in Settings. */
-    val assistantVoiceInput by lazy {
+    val assistantVoiceInput: SwitchingVoiceInput by lazy {
         SwitchingVoiceInput(
             voiceInput,
             deepgramVoiceInput,
@@ -133,7 +133,7 @@ class AppContainer(context: Context) {
         speaker.stop()
     }
 
-    val engine by lazy {
+    val engine: AssistantEngine by lazy {
         AssistantEngine(
             scope = appScope,
             settings = currentSettings,
