@@ -7,6 +7,6 @@ import okhttp3.OkHttpClient
 class AiProviderFactory(private val http: OkHttpClient) {
     fun create(id: ProviderId, apiKey: String): AiProvider = when (id) {
         ProviderId.GEMINI -> GeminiProvider(http, apiKey)
-        ProviderId.GROK -> OpenAiCompatibleProvider(ProviderId.GROK, http, apiKey, XAI_BASE_URL)
+        ProviderId.GROQ -> OpenAiCompatibleProvider(ProviderId.GROQ, http, apiKey, GROQ_BASE_URL)
     }
 }

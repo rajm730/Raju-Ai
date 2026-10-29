@@ -19,7 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Adapter for OpenAI-compatible chat APIs. Used for xAI Grok today; a future OpenAI provider
+ * Adapter for OpenAI-compatible chat APIs. Used for Groq today; a future OpenAI provider
  * only needs a new [ProviderId] and base URL.
  */
 class OpenAiCompatibleProvider(
@@ -86,4 +86,4 @@ class OpenAiCompatibleProvider(
     }
 }
 
-const val XAI_BASE_URL = "https://api.x.ai/v1"
+const val GROQ_BASE_URL = "https://api.groq.com/openai/v1"

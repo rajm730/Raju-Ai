@@ -62,17 +62,17 @@ class ProvidersTest {
     @Test
     fun rateLimitAndQuotaAreDistinguished() = runBlocking {
         enqueue(429, """{"error":"Too many requests"}""")
-        val grok = OpenAiCompatibleProvider(ProviderId.GROK, http, "k", url)
-        assertEquals(FailureKind.RATE_LIMITED, (grok.listModels() as AiResult.Failure).kind)
+        val groq = OpenAiCompatibleProvider(ProviderId.GROQ, http, "k", url)
+        assertEquals(FailureKind.RATE_LIMITED, (groq.listModels() as AiResult.Failure).kind)
         enqueue(429, """{"error":{"message":"You exceeded your current quota"}}""")
-        assertEquals(FailureKind.QUOTA_EXCEEDED, (grok.listModels() as AiResult.Failure).kind)
+        assertEquals(FailureKind.QUOTA_EXCEEDED, (groq.listModels() as AiResult.Failure).kind)
     }
 
     @Test
     fun serverErrorIsRetriedOnce() = runBlocking {
         enqueue(503, "{}")
         enqueue(200, """{"choices":[{"message":{"role":"assistant","content":"OK"}}]}""")
-        val r = OpenAiCompatibleProvider(ProviderId.GROK, http, "k", url).chat("grok-3-mini", "sys", listOf(Turn(TurnRole.USER, "hi")))
+        val r = OpenAiCompatibleProvider(ProviderId.GROQ, http, "k", url).chat("llama-3.3-70b-versatile", "sys", listOf(Turn(TurnRole.USER, "hi")))
         assertEquals(AiResult.Success("OK"), r)
         assertEquals(2, server.requestCount)
         server.takeRequest()
@@ -83,7 +83,7 @@ class ProvidersTest {
     fun timeoutIsReported() = runBlocking {
         server.enqueue(MockResponse().setBody("{}").setHeadersDelay(5, TimeUnit.SECONDS))
         server.enqueue(MockResponse().setBody("{}").setHeadersDelay(5, TimeUnit.SECONDS))
-        val r = OpenAiCompatibleProvider(ProviderId.GROK, http, "k", url).listModels() as AiResult.Failure
+        val r = OpenAiCompatibleProvider(ProviderId.GROQ, http, "k", url).listModels() as AiResult.Failure
         assertEquals(FailureKind.TIMEOUT, r.kind)
     }
 

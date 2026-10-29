@@ -49,6 +49,7 @@ fun isSafeWebUrl(url: String): Boolean {
 private val SECRET_PATTERNS = listOf(
     Regex("""AIza[0-9A-Za-z_\-]{20,}"""),          // Google API keys
     Regex("""\b(sk|xai|tvly)-[0-9A-Za-z_\-]{10,}"""), // OpenAI / xAI / Tavily style keys
+    Regex("""\bgsk_[0-9A-Za-z]{10,}"""),             // Groq keys
     Regex("""\b(?:\d[ -]?){13,19}\b"""),             // card-like digit runs
     Regex("""(?i)\b(password|passcode|passwd|pin|otp|cvv|upi pin)\b"""),
     Regex("""(पासवर्ड|पिन|ओटीपी)"""),

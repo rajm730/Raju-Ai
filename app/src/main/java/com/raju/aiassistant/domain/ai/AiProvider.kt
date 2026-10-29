@@ -5,7 +5,7 @@ import com.raju.aiassistant.domain.model.SecretId
 /** Identifies an AI backend. New providers (e.g. OpenAI) are added here plus an adapter. */
 enum class ProviderId(val displayName: String, val shortName: String, val secret: SecretId) {
     GEMINI("Google Gemini", "Gemini", SecretId.GEMINI_API_KEY),
-    GROK("xAI Grok", "Grok", SecretId.GROK_API_KEY),
+    GROQ("Groq", "Groq", SecretId.GROQ_API_KEY),
 }
 
 data class AiModel(val id: String, val displayName: String)
@@ -51,10 +51,11 @@ interface AiProvider {
 
 /** Picks a sensible default when the user has not chosen a model yet. */
 fun pickDefaultModel(provider: ProviderId, models: List<AiModel>): AiModel? {
-    val usable = models.filterNot { m -> listOf("image", "vision", "embed", "tts", "audio").any { m.id.contains(it, true) } }
+    val usable = models.filterNot { m -> listOf("image", "vision", "embed", "tts", "audio", "whisper", "guard", "playai").any { m.id.contains(it, true) } }
     val preferred = when (provider) {
         ProviderId.GEMINI -> usable.firstOrNull { it.id.contains("flash", true) && !it.id.contains("lite", true) }
-        ProviderId.GROK -> usable.firstOrNull { it.id.contains("mini", true) }
+        ProviderId.GROQ -> usable.firstOrNull { it.id.contains("llama-3.3-70b", true) }
+            ?: usable.firstOrNull { it.id.contains("llama", true) }
     }
     return preferred ?: usable.firstOrNull() ?: models.firstOrNull()
 }

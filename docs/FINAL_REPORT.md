@@ -1,12 +1,14 @@
 # Final Report — Phases 3–10
 
+> AI providers: Google Gemini and **Groq** (api.groq.com, OpenAI-compatible). xAI Grok was replaced by Groq on request.
+
 ## Feature checklist
 Legend: ✅ implemented and unit-tested on JVM · 🟡 implemented, not yet tested on a device · ⛔ not implemented, by design
 
 | Area | Status | Notes |
 |---|---|---|
 | Gemini adapter (chat, model list, connection test) | ✅ | Tested against a mock server: header auth, parsing, invalid key, retry |
-| Grok adapter (OpenAI-compatible; OpenAI-ready) | ✅ | Rate limit vs quota, 5xx retry, timeout |
+| Groq adapter (OpenAI-compatible; OpenAI-ready) | ✅ | Rate limit vs quota, 5xx retry, timeout |
 | Error mapping, retry, cancellation, timeouts | ✅ | Auth and quota errors are never retried |
 | Assistant engine: chat, tool actions, confirmations, permissions | ✅ | 14 engine tests with fakes |
 | Hindi/Hinglish persona, honesty rules, memories in prompt | ✅ | |

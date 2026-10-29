@@ -11,7 +11,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 
 ## What it does
 - **Home:** large heart-beating Arc Reactor with a colour and rhythm for each state (Ready, Listening, Thinking, Speaking, Executing, Done, Error, Offline). It pulses with the real voice audio.
-- **AI chat:** Google Gemini or xAI Grok. Model list comes from your key, with a real connection test and clear errors (invalid key, rate limit, quota, timeout, offline). Requests are retried once on network errors and can be cancelled with Stop.
+- **AI chat:** Google Gemini or Groq. Model list comes from your key, with a real connection test and clear errors (invalid key, rate limit, quota, timeout, offline). Requests are retried once on network errors and can be cancelled with Stop.
 - **Voice:**
   - Input: tap-to-talk or continuous conversation (Android speech recognition, Hindi or English-India).
   - Output: female voice from Sarvam AI Bulbul (cloud), falling back to Android TTS (offline). The reactor shows which engine is active. Stop interrupts immediately, and only one voice plays at a time.
@@ -38,7 +38,7 @@ Release APK: **Build → Generate Signed App Bundle / APK** with your own keysto
 | Service | Needed for | Get a key | Cost |
 |---|---|---|---|
 | Google Gemini | AI chat (default) | https://aistudio.google.com/apikey | Free tier with limits; paid beyond |
-| xAI Grok | AI chat (optional) | https://console.x.ai | Paid credits |
+| Groq | AI chat (optional, very fast) | https://console.groq.com/keys | Free tier with rate limits |
 | Tavily | Web search | https://app.tavily.com | Free monthly credits; paid beyond |
 | Sarvam AI | Natural female Hindi voice | https://dashboard.sarvam.ai | Free credits; paid beyond |
 
@@ -74,7 +74,7 @@ Manage these anytime: Settings → **Manage app permissions**. On Samsung phones
 ```
 app/src/main/java/com/raju/aiassistant/
 ├── domain/        assistant engine, action parser, prompts, models (plain Kotlin, unit-tested)
-├── data/ai        Gemini + OpenAI-compatible (Grok) adapters, HTTP/error mapping
+├── data/ai        Gemini + OpenAI-compatible (Groq) adapters, HTTP/error mapping
 ├── data/search    Tavily · data/tts Sarvam, Android TTS, TtsManager · data/voice SpeechRecognizer
 ├── data/tools     contacts, dialer, apps, settings, battery, music, WhatsApp intents
 ├── data/db, data/repository, data/prefs   Room (v2, with migration) and DataStore
