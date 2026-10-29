@@ -64,6 +64,14 @@ class AssistantEngineTest {
     private class FakeTools(var contacts: ContactLookup = ContactLookup.Found(emptyList())) : DeviceTools {
         val dialed = mutableListOf<Contact>()
         val music = mutableListOf<Pair<String, MusicService>>()
+        val timers = mutableListOf<Int>()
+        val sms = mutableListOf<Pair<String, String>>()
+        override fun setTimer(seconds: Int, note: String): ToolOutcome { timers += seconds; return ToolOutcome.Done("Timer set") }
+        override fun sendSms(contact: Contact, text: String): ToolOutcome { sms += contact.number to text; return ToolOutcome.Done("SMS sent") }
+        val events = mutableListOf<Pair<String, Int>>()
+        override fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome {
+            events += title to durationMinutes; return ToolOutcome.Done("Calendar opened")
+        }
         override suspend fun findContacts(query: String) = contacts
         override fun dial(contact: Contact, direct: Boolean): ToolOutcome { dialed += contact; return ToolOutcome.Done("Dialer opened for ${contact.name}") }
         override fun openApp(name: String) = ToolOutcome.Failed("App \"$name\" is not installed")
@@ -116,11 +124,11 @@ class AssistantEngineTest {
 
     @Test
     fun replyIsRecordedSpokenAndStateReturnsToIdle() = runTest {
-        val e = engine(AiResult.Success("Namaste! **Main** Raju AI hoon."))
+        val e = engine(AiResult.Success("Namaste! **Main** Seema AI hoon."))
         e.submit("hello")
         settle()
         assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), e.transcript.value.map { it.role })
-        assertEquals(listOf("Namaste! Main Raju AI hoon."), speaker.spoken)
+        assertEquals(listOf("Namaste! Main Seema AI hoon."), speaker.spoken)
         assertEquals(AssistantState.Idle, e.state.value)
         assertEquals(2, store.saved.size)
     }
@@ -274,5 +282,69 @@ class AssistantEngineTest {
         settle()
         assertEquals(2, e.transcript.value.size)
         assertTrue(store.saved.isEmpty())
+    }
+
+    @Test
+    fun timerRunsWithoutConfirmation() = runTest {
+        val e = engine(AiResult.Success("""Theek hai. <action>{"type":"set_timer","minutes":5,"label":"chai"}</action>"""))
+        e.submit("5 minute ka timer lagao")
+        settle()
+        assertEquals(listOf(300), tools.timers)
+        assertTrue(e.transcript.value.any { it.text.startsWith("✅") })
+    }
+
+    @Test
+    fun smsIsSentOnlyAfterConfirmation() = runTest {
+        tools.contacts = ContactLookup.Found(listOf(Contact("Mom", "9876543210")))
+        val e = engine(AiResult.Success("""<action>{"type":"sms","contact":"Mom","text":"Late aaunga"}</action>"""))
+        e.submit("mom ko sms karo")
+        runCurrent()
+        assertNotNull(e.pending.value)
+        assertTrue(tools.sms.isEmpty())
+        e.resolve(Decision.Approve())
+        settle()
+        assertEquals(listOf("9876543210" to "Late aaunga"), tools.sms)
+    }
+
+    @Test
+    fun deniedSmsSendsNothingAndSafetyModeBlocksIt() = runTest {
+        tools.contacts = ContactLookup.Found(listOf(Contact("Mom", "9876543210")))
+        val e = engine(AiResult.Success("""<action>{"type":"sms","contact":"Mom","text":"Hi"}</action>"""))
+        e.submit("sms mom")
+        runCurrent()
+        e.resolve(Decision.Deny)
+        settle()
+        assertTrue(tools.sms.isEmpty())
+        assertEquals(ActionStatus.CANCELLED, store.logs.last().second)
+
+        settings.value = settings.value.copy(safetyMode = true)
+        val e2 = engine(AiResult.Success("""<action>{"type":"sms","contact":"Mom","text":"Hi again"}</action>"""))
+        e2.submit("sms mom again")
+        settle()
+        assertTrue(tools.sms.isEmpty())
+        assertEquals(ActionStatus.BLOCKED, store.logs.last().second)
+    }
+
+    @Test
+    fun calendarEventOpensForFutureTimeOnly() = runTest {
+        val e = engine(
+            AiResult.Success("""<action>{"type":"add_event","title":"Doctor","start":"2030-01-01T17:00","duration_minutes":45}</action>"""),
+            AiResult.Success("""<action>{"type":"add_event","title":"Old","start":"1960-01-01T10:00"}</action>"""),
+        )
+        e.submit("doctor appointment add karo")
+        settle()
+        assertEquals(listOf("Doctor" to 45), tools.events)
+        e.submit("purana event")
+        settle()
+        assertEquals(1, tools.events.size)
+        assertEquals(ActionStatus.FAILED, store.logs.last().second)
+    }
+
+    @Test
+    fun batteryResultIsSpokenWhenRepliesAreSpoken() = runTest {
+        val e = engine(AiResult.Success("""Dekhti hoon. <action>{"type":"battery"}</action>"""))
+        e.submit("battery kitni hai")
+        settle()
+        assertEquals(listOf("Dekhti hoon.", "Battery 80%"), speaker.spoken)
     }
 }

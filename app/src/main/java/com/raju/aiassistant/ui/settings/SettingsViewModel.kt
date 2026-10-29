@@ -47,7 +47,7 @@ data class Diagnostics(
     val micGranted: Boolean = false,
     val contactsGranted: Boolean = false,
     val speechRecognitionAvailable: Boolean = false,
-    /** The user switched Raju AI on in Android's Notification access list. */
+    /** The user switched Seema AI on in Android's Notification access list. */
     val listenerEnabled: Boolean = false,
     /** Android actually connected the listener (can lag behind or fail even when enabled). */
     val listenerConnected: Boolean = false,
@@ -106,7 +106,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** System dialog that asks the user to make Raju AI the call-screening app (Android 10+). */
+    /** System dialog that asks the user to make Seema AI the call-screening app (Android 10+). */
     fun callRoleRequestIntent(): Intent? =
         if (Build.VERSION.SDK_INT >= 29) c.appContext.getSystemService(RoleManager::class.java)?.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING) else null
 
@@ -160,7 +160,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                     }
                     is AiResult.Failure -> r
                 }
-                id == SecretId.TAVILY_API_KEY -> when (val r = TavilyClient(c.http, key).search("Raju AI connection test", 1)) {
+                id == SecretId.TAVILY_API_KEY -> when (val r = TavilyClient(c.http, key).search("Seema AI connection test", 1)) {
                     is AiResult.Success -> AiResult.Success("Connected — search returned ${r.value.results.size} result(s).")
                     is AiResult.Failure -> r
                 }

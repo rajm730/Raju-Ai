@@ -132,4 +132,15 @@ class ProvidersTest {
         assertTrue(sent.contains("\"speaker\":\"anushka\""))
         assertTrue(sent.contains("\"enable_preprocessing\":true"))
     }
+
+    @Test
+    fun cutOffRepliesAreMarked() = runBlocking {
+        enqueue(200, """{"candidates":[{"content":{"parts":[{"text":"Adhura"}]},"finishReason":"MAX_TOKENS"}]}""")
+        val g = GeminiProvider(http, "k", url).chat("gemini-2.5-flash", "s", listOf(Turn(TurnRole.USER, "hi"))) as AiResult.Success
+        assertTrue(g.value.startsWith("Adhura") && g.value.contains("कट गया"))
+        enqueue(200, """{"choices":[{"message":{"content":"Adhura"},"finish_reason":"length"}]}""")
+        val q = OpenAiCompatibleProvider(ProviderId.GROQ, http, "k", url).chat("m", "s", listOf(Turn(TurnRole.USER, "hi"))) as AiResult.Success
+        assertTrue(q.value.contains("कट गया"))
+        server.takeRequest(); assertTrue(server.takeRequest().body.readUtf8().contains("\"max_tokens\":4096"))
+    }
 }

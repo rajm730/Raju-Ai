@@ -26,6 +26,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 val JsonFormat = Json { ignoreUnknownKeys = true; isLenient = true }
+/** Appended to a reply that the provider cut off because it hit the output-token limit. */
+const val TRUNCATED_NOTE = "\n\n(जवाब लंबाई की हद पर कट गया — 'आगे बताओ' कहें।)"
+
 private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
 fun JsonElement.toRequestBody(): RequestBody = toString().toRequestBody(JSON_MEDIA)

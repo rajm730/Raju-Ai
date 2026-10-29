@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Announces incoming SIM calls. Android only binds this service after the user grants Raju AI the
+ * Announces incoming SIM calls. Android only binds this service after the user grants Seema AI the
  * "call screening" role (Settings → Calls). Every call is allowed through unchanged — the app never
  * blocks, rejects, answers, records or silences calls. The caller's name is looked up in Contacts
  * only if Contacts permission was granted; nothing about the call is stored.

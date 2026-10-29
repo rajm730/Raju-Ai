@@ -35,7 +35,8 @@ data class IncomingItem(
 private val INVISIBLE = Regex("[\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]")
 private val HIDDEN_PREVIEW = Regex(
     "^(\\d+\\s+)?new messages?$|contents? hidden|message hidden|^new message$|checking for new messages|" +
-        "^\\d+\\s+messages?\\s+from\\s+\\d+\\s+chats?$|^you have \\d+ new|^sensitive notification content hidden$",
+        "^\\d+\\s+messages?\\s+from\\s+\\d+\\s+chats?$|^you have \\d+ new|^sensitive notification content hidden$|" +
+        "^(\\d+\\s+)?(नया|नए)\\s+संदेश(ों)?$|संदेश\\s+छिपा|सामग्री\\s+छिपी|^\\d+\\s+संदेश(ों)?$",
     RegexOption.IGNORE_CASE,
 )
 

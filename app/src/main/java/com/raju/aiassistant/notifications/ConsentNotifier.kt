@@ -10,6 +10,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -18,6 +20,7 @@ import com.raju.aiassistant.R
 import com.raju.aiassistant.RajuApp
 import com.raju.aiassistant.domain.notify.PendingAnnouncement
 import com.raju.aiassistant.domain.notify.whoText
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Shows the "Read / Skip" question as an app notification so the user can answer while the app is
@@ -27,7 +30,7 @@ class ConsentNotifier(private val context: Context) {
 
     fun createChannel() {
         val channel = NotificationChannel(CHANNEL_ID, "Message announcements", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Asks before Raju AI reads a message aloud"
+            description = "Asks before Seema AI reads a message aloud"
             setSound(null, null) // the assistant speaks; no extra ringtone
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -90,11 +93,19 @@ class ConsentActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val c = (context.applicationContext as? RajuApp)?.container ?: return
         val id = intent.getLongExtra(EXTRA_ID, -1)
+        NotificationManagerCompat.from(context).cancel(ConsentNotifier.NOTIFICATION_ID)
         when (intent.action) {
-            ACTION_READ -> c.announcements.read(id)
+            // goAsync keeps this receiver (and the process) alive while the message is spoken. Android allows
+            // only ~10 s for a receiver, so it is released after 9 s at the latest; speech itself continues.
+            ACTION_READ -> {
+                val pending = goAsync()
+                val released = AtomicBoolean(false)
+                val release: () -> Unit = { if (released.compareAndSet(false, true)) runCatching { pending.finish() } }
+                Handler(Looper.getMainLooper()).postDelayed({ release() }, 9_000L)
+                c.announcements.read(id, release)
+            }
             ACTION_SKIP -> c.announcements.skip(id)
         }
-        NotificationManagerCompat.from(context).cancel(ConsentNotifier.NOTIFICATION_ID)
     }
 
     companion object {

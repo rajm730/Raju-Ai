@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
@@ -109,7 +110,7 @@ fun ChatScreen(
             if (state.messages.isEmpty()) {
                 item {
                     Text(
-                        "Namaste! Kuch bhi poochhiye — Hindi, Hinglish ya English mein.\nTry: \"Mom ko call karo\", \"Kesariya bajao\", \"Aaj Delhi ka mausam?\"",
+                        "Namaste! Kuch bhi poochhiye — Hindi, Hinglish ya English mein.\nTry: \"Mom ko call karo\", \"5 minute ka timer\", \"Kal 5 baje meeting add karo\", \"India Gate ka rasta\"",
                         style = MaterialTheme.typography.bodyLarge,
                         color = TextSecondary,
                     )
@@ -157,14 +158,15 @@ fun ChatScreen(
     }
 }
 
-private val URL_REGEX = Regex("""https?://[^\s)\]]+""")
+private val URL_REGEX = Regex("""https?://[^\s\]]+""")
 
 /** Turns safe http(s) URLs into tappable links. */
 private fun linkify(text: String): AnnotatedString = buildAnnotatedString {
     var last = 0
     for (m in URL_REGEX.findAll(text)) {
         append(text.substring(last, m.range.first))
-        val url = m.value.trimEnd('.', ',')
+        var url = m.value.trimEnd('.', ',', ';', ':', '!', '?', '\u0964')
+        while (url.endsWith(")") && url.count { it == ')' } > url.count { it == '(' }) url = url.dropLast(1)
         if (isSafeWebUrl(url)) {
             withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = ReactorBlue, textDecoration = TextDecoration.Underline)))) { append(url) }
             append(m.value.substring(url.length))
@@ -195,7 +197,10 @@ private fun MessageBubble(message: ChatMessage) {
             color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
-            Text(linkify(message.text), Modifier.padding(12.dp), style = MaterialTheme.typography.bodyLarge, color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface)
+            // Long-press to select and copy.
+            SelectionContainer {
+                Text(linkify(message.text), Modifier.padding(12.dp), style = MaterialTheme.typography.bodyLarge, color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface)
+            }
         }
     }
 }

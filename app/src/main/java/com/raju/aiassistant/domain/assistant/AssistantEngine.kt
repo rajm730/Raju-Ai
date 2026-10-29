@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 
 /** A question the user must answer before the assistant continues. */
 data class PendingRequest(
@@ -258,7 +259,7 @@ class AssistantEngine(
     private suspend fun execute(action: AssistantAction, provider: AiProvider, model: String, system: String, speak: Boolean) {
         val s = settings.value
         val sensitive = action is AssistantAction.Call || action is AssistantAction.WhatsApp ||
-            action is AssistantAction.OpenApp || action is AssistantAction.PlayMusic
+            action is AssistantAction.OpenApp || action is AssistantAction.PlayMusic || action is AssistantAction.Sms
         if (s.safetyMode && sensitive) {
             report(action, ActionStatus.BLOCKED, "Safety Mode is on, so \"${action.label}\" was not performed. Turn Safety Mode off in Settings to allow it.")
             return
@@ -269,9 +270,23 @@ class AssistantEngine(
             is AssistantAction.WhatsApp -> whatsApp(action)
             is AssistantAction.OpenApp -> report(action, tools.openApp(action.name))
             is AssistantAction.OpenSettings -> report(action, tools.openSettings(action.page))
-            is AssistantAction.Battery -> report(action, tools.batteryStatus())
+            is AssistantAction.Battery -> {
+                val outcome = tools.batteryStatus()
+                report(action, outcome)
+                // Informational result: in a voice conversation the user expects to hear it.
+                if (speak && outcome is ToolOutcome.Done) say(outcome.message)
+            }
             is AssistantAction.PlayMusic -> report(action, tools.playMusic(action.query, action.service ?: s.musicService))
             is AssistantAction.Remember -> remember(action)
+            is AssistantAction.SetTimer -> report(action, tools.setTimer(action.seconds, action.note))
+            is AssistantAction.SetAlarm -> report(action, tools.setAlarm(action.hour, action.minute, action.note))
+            is AssistantAction.Flashlight -> report(action, tools.setFlashlight(action.on))
+            is AssistantAction.Volume -> report(action, tools.setVolume(action.percent))
+            is AssistantAction.Media -> report(action, tools.mediaControl(action.command))
+            is AssistantAction.Sms -> sendSms(action)
+            is AssistantAction.AddEvent -> addEvent(action)
+            is AssistantAction.Navigate -> report(action, tools.navigate(action.destination, action.mode))
+            is AssistantAction.CopyText -> report(action, tools.copyToClipboard(action.text))
             is AssistantAction.SearchWeb -> searchWeb(action, provider, model, system, speak)
         }
     }
@@ -295,6 +310,42 @@ class AssistantEngine(
             candidates = candidates,
         ) ?: run { report(action, ActionStatus.CANCELLED, "Call cancelled."); return }
         report(action, tools.dial(chosen, settings.value.directCalling))
+    }
+
+    private suspend fun sendSms(action: AssistantAction.Sms) {
+        val candidates: List<Contact> = if (action.number != null && action.contact == null) {
+            listOf(Contact(action.number, action.number))
+        } else {
+            when (val found = lookup(action.contact ?: action.number.orEmpty())) {
+                null -> { report(action, ActionStatus.CANCELLED, "Contacts permission was not granted, so I could not find ${action.contact}."); return }
+                else -> found
+            }
+        }
+        if (candidates.isEmpty()) {
+            report(action, ActionStatus.FAILED, "No contact named \"${action.contact}\" was found.")
+            return
+        }
+        val chosen = confirmContact(
+            title = "SMS bhejein?",
+            message = if (candidates.size == 1) "${candidates[0].name} (${candidates[0].number}) ko yeh SMS bheja jayega:\n\n\"${action.text}\""
+            else "Kis contact ko SMS bhejna hai?\n\n\"${action.text}\"",
+            candidates = candidates,
+        ) ?: run { report(action, ActionStatus.CANCELLED, "SMS cancelled."); return }
+        val smsPermission = "android.permission.SEND_SMS"
+        if (!tools.hasPermission(smsPermission)) {
+            val d = ask(PendingRequest(PendingRequest.Kind.PERMISSION, "SMS permission", "SMS bhejne ke liye permission chahiye. SMS aapke SIM se jayega (carrier charges lag sakte hain).", permission = smsPermission))
+            if (d !is Decision.PermissionResult || !d.granted) { report(action, ActionStatus.CANCELLED, "SMS permission was not granted, so nothing was sent."); return }
+        }
+        report(action, tools.sendSms(chosen, action.text))
+    }
+
+    private suspend fun addEvent(action: AssistantAction.AddEvent) {
+        val startMillis = runCatching { action.start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+        if (startMillis == null || startMillis < clock() - 5 * 60_000L) {
+            report(action, ActionStatus.FAILED, "The event time ${action.start} is in the past or invalid, so the calendar was not opened. Please say the date and time again.")
+            return
+        }
+        report(action, tools.addCalendarEvent(action.title, startMillis, action.durationMinutes, action.location))
     }
 
     private suspend fun whatsApp(action: AssistantAction.WhatsApp) {
@@ -402,8 +453,10 @@ class AssistantEngine(
         return try {
             d.await()
         } finally {
-            _pending.value = null
-            decision = null
+            if (decision === d) {
+                _pending.value = null
+                decision = null
+            }
         }
     }
 

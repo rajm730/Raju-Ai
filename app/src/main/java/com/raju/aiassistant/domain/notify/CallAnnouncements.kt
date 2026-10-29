@@ -22,6 +22,7 @@ class CallDeduper(private val windowMs: Long = 60_000) {
     @Synchronized
     fun shouldAnnounce(number: String?, now: Long): Boolean {
         val key = number?.filter { it.isDigit() }?.takeLast(10).orEmpty()
+        if (key.isEmpty()) return true // hidden number: every ring is announced
         recent.entries.removeAll { now - it.value > windowMs }
         if (recent.containsKey(key)) return false
         recent[key] = now

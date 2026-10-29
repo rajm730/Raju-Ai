@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.raju.aiassistant.ui.LaunchRequest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,6 +85,9 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** Set by MainActivity for shortcuts and shared text; consumed by the navigation host. */
+    val launchRequests = MutableStateFlow<LaunchRequest?>(null)
+
     /** Stop button: assistant, speech and any pending message announcement. */
     fun stopEverything() {
         engine.stop()
@@ -105,7 +109,7 @@ class AppContainer(context: Context) {
             speaker = speaker,
             voice = voiceInput,
             isOnline = { online.value },
-            nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a", Locale.ENGLISH).format(Date()) },
+            nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }
 }

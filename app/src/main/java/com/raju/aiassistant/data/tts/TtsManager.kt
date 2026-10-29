@@ -81,7 +81,7 @@ class TtsManager(
     }
 
     /** Settings → Test voice. Really synthesises and plays a sample. */
-    fun test(sample: String = "Namaste! Main Raju AI hoon. आपकी क्या मदद कर सकती हूँ?", onDone: (SpeakResult) -> Unit) {
+    fun test(sample: String = "Namaste! Main Seema AI hoon. आपकी क्या मदद कर सकती हूँ?", onDone: (SpeakResult) -> Unit) {
         scope.launch { onDone(speak(sample)) }
     }
 }

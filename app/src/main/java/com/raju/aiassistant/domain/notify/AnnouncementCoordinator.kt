@@ -59,12 +59,17 @@ class AnnouncementCoordinator(
         if (_pending.value?.item?.key == key) clearPending()
     }
 
-    fun read(id: Long) {
-        val p = _pending.value ?: return
-        if (p.id != id) return
+    /** [onDone] is always called once: right away if there is nothing to read, otherwise after speech ends or is stopped. */
+    fun read(id: Long, onDone: () -> Unit = {}) {
+        val p = _pending.value
+        if (p == null || p.id != id) { onDone(); return }
         clearPending(resume = false)
         worker = scope.launch {
-            speaker.speak(readPreviewText(p.item))
+            try {
+                speaker.speak(readPreviewText(p.item))
+            } finally {
+                onDone()
+            }
             worker = null
             pump()
         }

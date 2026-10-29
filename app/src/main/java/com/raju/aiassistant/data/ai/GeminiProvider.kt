@@ -55,7 +55,7 @@ class GeminiProvider(
             }
             putJsonObject("generationConfig") {
                 put("temperature", 0.7)
-                put("maxOutputTokens", 2048)
+                put("maxOutputTokens", 4096)
             }
         }
         val request = Request.Builder()
@@ -91,13 +91,17 @@ class GeminiProvider(
         val candidate = (root["candidates"] as? JsonArray)?.firstOrNull() as? JsonObject
         val parts = ((candidate?.get("content") as? JsonObject)?.get("parts") as? JsonArray).orEmpty()
         val text = parts.mapNotNull { ((it as? JsonObject)?.get("text") as? JsonPrimitive)?.contentOrNull }.joinToString("")
-        if (text.isNotBlank()) return AiResult.Success(text.trim())
-        val blockReason = ((root["promptFeedback"] as? JsonObject)?.get("blockReason") as? JsonPrimitive)?.contentOrNull
         val finish = (candidate?.get("finishReason") as? JsonPrimitive)?.contentOrNull
+        if (text.isNotBlank()) return AiResult.Success(text.trim() + if (finish == "MAX_TOKENS") TRUNCATED_NOTE else "")
+        val blockReason = ((root["promptFeedback"] as? JsonObject)?.get("blockReason") as? JsonPrimitive)?.contentOrNull
         return if (blockReason != null || finish == "SAFETY") {
             AiResult.Failure(FailureKind.BLOCKED, FailureKind.BLOCKED.userMessage)
         } else {
-            AiResult.Failure(FailureKind.UNKNOWN, "Empty response" + (finish?.let { " ($it)" } ?: ""))
+            if (finish == "MAX_TOKENS") {
+                AiResult.Failure(FailureKind.UNKNOWN, "The model used its whole output limit before writing a reply. Ask a shorter question or pick a \"flash\" model in Settings.")
+            } else {
+                AiResult.Failure(FailureKind.UNKNOWN, "Empty response" + (finish?.let { " ($it)" } ?: ""))
+            }
         }
     }
 }

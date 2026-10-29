@@ -27,7 +27,24 @@ interface DeviceTools {
     fun batteryStatus(): ToolOutcome
     fun playMusic(query: String, service: MusicService): ToolOutcome
     fun openWhatsApp(number: String?, text: String): ToolOutcome
+
+    // Personal-use extras. Defaults keep older fakes compiling; AndroidDeviceTools overrides all of them.
+    fun setTimer(seconds: Int, note: String): ToolOutcome = ToolOutcome.Failed("Timer is not supported here.")
+    fun setAlarm(hour: Int, minute: Int, note: String): ToolOutcome = ToolOutcome.Failed("Alarm is not supported here.")
+    fun setFlashlight(on: Boolean): ToolOutcome = ToolOutcome.Failed("Flashlight is not supported here.")
+    fun setVolume(percent: Int): ToolOutcome = ToolOutcome.Failed("Volume control is not supported here.")
+    fun mediaControl(command: MediaCommand): ToolOutcome = ToolOutcome.Failed("Media control is not supported here.")
+    fun hasPermission(permission: String): Boolean = true
+    fun sendSms(contact: Contact, text: String): ToolOutcome = ToolOutcome.Failed("SMS is not supported here.")
+    fun addCalendarEvent(title: String, startMillis: Long, durationMinutes: Int, location: String?): ToolOutcome =
+        ToolOutcome.Failed("Calendar is not supported here.")
+    fun navigate(destination: String, mode: TravelMode): ToolOutcome = ToolOutcome.Failed("Navigation is not supported here.")
+    fun copyToClipboard(text: String): ToolOutcome = ToolOutcome.Failed("Clipboard is not supported here.")
 }
+
+enum class TravelMode { DRIVE, WALK, BIKE, TRANSIT }
+
+enum class MediaCommand { PLAY, PAUSE, NEXT, PREVIOUS }
 
 /** Digits-only number for wa.me links; 10-digit Indian mobile numbers get the 91 prefix. */
 fun normalizeForWhatsApp(number: String): String? {

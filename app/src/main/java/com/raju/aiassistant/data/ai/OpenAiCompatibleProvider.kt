@@ -52,6 +52,7 @@ class OpenAiCompatibleProvider(
         val payload = buildJsonObject {
             put("model", model)
             put("temperature", 0.7)
+            put("max_tokens", 4096)
             putJsonArray("messages") {
                 addJsonObject { put("role", "system"); put("content", systemPrompt) }
                 turns.forEach { t ->
@@ -81,7 +82,8 @@ class OpenAiCompatibleProvider(
             ?: return AiResult.Failure(FailureKind.UNKNOWN, "Unreadable response")
         val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         val text = ((choice?.get("message") as? JsonObject)?.get("content") as? JsonPrimitive)?.contentOrNull
-        return if (!text.isNullOrBlank()) AiResult.Success(text.trim())
+        val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
+        return if (!text.isNullOrBlank()) AiResult.Success(text.trim() + if (finish == "length") TRUNCATED_NOTE else "")
         else AiResult.Failure(FailureKind.UNKNOWN, "Empty response")
     }
 }
