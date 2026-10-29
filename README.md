@@ -32,6 +32,12 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 
 Command line: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` · `./gradlew testDebugUnitTest`
 
+### Ready-made APK from GitHub (no Android Studio needed)
+Every push runs **GitHub Actions → Android CI** (`.github/workflows/android.yml`): `assembleDebug`, `testDebugUnitTest` and `lintDebug` on GitHub's servers.
+1. Open https://github.com/rajm730/Raju-Ai/actions → the latest green **Android CI** run.
+2. Under **Artifacts**, download **raju-ai-debug-apk** (zip) → extract `app-debug.apk`.
+3. Copy it to the phone and open it (allow "Install unknown apps" for your file manager once).
+
 Release APK: **Build → Generate Signed App Bundle / APK** with your own keystore. Never commit the `.jks` file or its passwords; `.gitignore` excludes them.
 
 ## API keys (app → Settings)
