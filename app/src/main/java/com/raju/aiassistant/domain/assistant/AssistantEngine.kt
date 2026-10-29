@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import com.raju.aiassistant.domain.voice.isStopCommand
+import com.raju.aiassistant.domain.voice.stripEcho
 import java.time.ZoneId
 
 /** A question the user must answer before the assistant continues. */
@@ -40,6 +43,7 @@ data class PendingRequest(
 }
 
 private const val DAY_MS = 24 * 60 * 60_000L
+private val DEVANAGARI = Regex("[\\u0900-\\u097F]")
 /** Consecutive recogniser errors (not silence) tolerated in hands-free mode before it stops. */
 private const val MAX_LISTEN_FAILURES = 3
 
@@ -71,6 +75,8 @@ class AssistantEngine(
     private val clock: () -> Long = System::currentTimeMillis,
     private val nowDescription: () -> String = { java.util.Date(clock()).toString() },
     private val bargeIn: BargeIn = NoBargeIn,
+    private val transcriber: Transcriber? = null,
+    private val conversationMode: ConversationMode = NoConversationMode,
 ) {
     private val _state = MutableStateFlow(AssistantState.Idle)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
@@ -160,12 +166,15 @@ class AssistantEngine(
         _handsFreeActive.value = true
         listenFailures = 0
         if (settings.value.assistantPaused) return
+        // Call-style audio turns on the phone's echo canceller, so the user can talk over Seema.
+        if (settings.value.bargeIn) conversationMode.enter()
         val busy = _state.value == AssistantState.Thinking || _state.value == AssistantState.Speaking || _state.value == AssistantState.Executing
         if (!_voiceSession.value && !busy && _pending.value == null) startVoice()
     }
 
     /** App went to the background: release the microphone. Hands-free resumes with [startHandsFree]. */
     fun suspendListening() {
+        conversationMode.exit()
         if (!_voiceSession.value) return
         _voiceSession.value = false
         voice.stop()
@@ -209,6 +218,7 @@ class AssistantEngine(
     fun stop() {
         handsFree = false
         _handsFreeActive.value = false
+        conversationMode.exit()
         _voiceSession.value = false
         voice.stop()
         speaker.stop()
@@ -302,22 +312,79 @@ class AssistantEngine(
         }
     }
 
-    private suspend fun say(text: String) {
+    private suspend fun say(text: String, allowBargeIn: Boolean = true, depth: Int = 0) {
         _state.value = AssistantState.Speaking
-        // In a voice conversation the user can talk over Seema to stop her (barge-in).
+        val spoken = speakableText(text)
+        // In a voice conversation the user can talk over Seema, like interrupting a person.
+        val canBargeIn = allowBargeIn && settings.value.bargeIn && (handsFree || _voiceSession.value)
+        val capture = canBargeIn && transcriber?.isAvailable() == true
+        val utterance = CompletableDeferred<ByteArray?>()
         var interrupted = false
-        val canBargeIn = settings.value.bargeIn && (handsFree || _voiceSession.value)
-        if (canBargeIn) bargeIn.start { interrupted = true; speaker.stop() }
+        if (canBargeIn) {
+            bargeIn.start(
+                capture = capture,
+                onInterrupt = { interrupted = true; speaker.stop() },
+                onUtterance = { utterance.complete(it) },
+            )
+        }
         val result = try {
-            speaker.speak(speakableText(text))
+            speaker.speak(spoken)
         } finally {
-            bargeIn.stop()
+            if (!interrupted) bargeIn.stop()
+        }
+        if (interrupted) {
+            onInterrupted(spoken, capture, utterance, depth)
+            return
         }
         // The same fallback reason (e.g. "ElevenLabs failed …") is shown once, not under every reply.
-        if (!interrupted && result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
-        if (!interrupted) lastVoiceNote = result.error
+        if (result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
+        lastVoiceNote = result.error
         _state.value = AssistantState.Thinking
     }
+
+    /**
+     * The user talked over Seema. Like a person she stops at once and listens, then:
+     * - "ruko" / "bas" / "stop" → she stays quiet ("Haan, boliye?") and waits for the user;
+     * - a new question or remark → she answers that instead (the old answer is dropped);
+     * - nothing understandable (a cough, a noise) → she continues where she stopped.
+     * Without a speech-to-text key the normal recogniser takes over right away.
+     */
+    private suspend fun onInterrupted(spoken: String, capture: Boolean, utterance: CompletableDeferred<ByteArray?>, depth: Int) {
+        val played = speaker.playedChunks
+        _state.value = AssistantState.Listening
+        if (!capture) {
+            bargeIn.stop()
+            _voiceSession.value = true
+            listen()
+            throw CancellationException("Interrupted by the user")
+        }
+        val audio = withTimeoutOrNull(20_000) { utterance.await() }
+        bargeIn.stop()
+        _state.value = AssistantState.Thinking
+        val raw = audio?.let { runCatching { transcriber?.transcribe(it) }.getOrNull() }?.trim().orEmpty()
+        val heard = stripEcho(raw, spoken)
+        when {
+            heard.length < 2 -> {
+                // False alarm: carry on from the sentence she was saying.
+                val rest = chunkForSpeech(spoken).drop(played).joinToString(" ")
+                if (rest.isNotBlank() && depth < 2) say(resumePrefix(rest) + rest, depth = depth + 1)
+            }
+            isStopCommand(heard) -> {
+                record(ChatRole.USER, heard)
+                say(if (DEVANAGARI.containsMatchIn(heard)) "हाँ, बोलिए?" else "Haan, boliye?", allowBargeIn = false)
+                _voiceSession.value = true
+                listen()
+                throw CancellationException("Stopped by the user")
+            }
+            else -> {
+                // A new question: answer it now (this cancels the rest of the current turn).
+                submit(heard, fromVoice = true)
+                throw CancellationException("Interrupted with a new question")
+            }
+        }
+    }
+
+    private fun resumePrefix(rest: String) = if (DEVANAGARI.containsMatchIn(rest)) "हाँ, तो… " else "Haan, toh… "
 
     /** "Ruko": stop speaking right now but keep the conversation (hands-free listens again next). */
     fun interrupt() {

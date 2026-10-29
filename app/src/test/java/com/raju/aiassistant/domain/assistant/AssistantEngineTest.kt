@@ -411,47 +411,115 @@ class AssistantEngineTest {
         assertEquals(listOf("FREQ=DAILY"), tools.eventRules)
     }
 
-    @Test
-    fun talkingOverSeemaStopsHerAndSheListensAgain() = runTest {
-        var started = 0
-        val fakeBargeIn = object : BargeIn {
-            override fun start(onSpeech: () -> Unit) { started++; onSpeech() } // user talks right away
-            override fun stop() {}
+    /** The user talks over Seema's first reply (only that one) and "records" [utterance]. */
+    private class InstantBargeIn(private val utterance: ByteArray? = ByteArray(10)) : BargeIn {
+        var starts = 0
+        override fun start(capture: Boolean, onInterrupt: () -> Unit, onUtterance: (ByteArray?) -> Unit) {
+            if (starts++ > 0) return
+            onInterrupt()
+            if (capture) onUtterance(utterance)
         }
-        provider = FakeProvider(ArrayDeque(listOf(AiResult.Success("Bahut lamba jawab…"))))
-        val e = AssistantEngine(
+        override fun stop() {}
+    }
+
+    private class FakeTranscriber(var text: String?) : Transcriber {
+        override fun isAvailable() = true
+        override suspend fun transcribe(pcm16k: ByteArray) = text
+    }
+
+    private fun TestScope.engineWith(bargeIn: BargeIn, transcriber: Transcriber?, vararg replies: AiResult<String>): AssistantEngine {
+        provider = FakeProvider(ArrayDeque(replies.toList()))
+        return AssistantEngine(
             scope = backgroundScope, settings = settings, secret = { keys[it] },
             providerFor = { _, _ -> provider }, searchFor = { search },
             history = store, memories = store, actionLog = store, tools = tools,
             speaker = speaker, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
-            bargeIn = fakeBargeIn,
+            bargeIn = bargeIn, transcriber = transcriber,
         )
+    }
+
+    @Test
+    fun interruptingWithANewQuestionAnswersThatInstead() = runTest {
+        val bargeIn = InstantBargeIn()
+        val e = engineWith(bargeIn, FakeTranscriber("Delhi ka mausam batao"), AiResult.Success("Bahut lamba jawab hai."), AiResult.Success("Delhi mein dhoop hai."))
         e.startHandsFree()
         voice.onResult!!("kuch batao")
         settle()
-        assertEquals(1, started)
-        assertTrue(speaker.stops > 0) // speech was cut short
-        assertEquals(2, voice.starts) // and she is listening again
+        assertTrue(e.transcript.value.any { it.role == ChatRole.USER && it.text == "Delhi ka mausam batao" })
+        assertEquals("Delhi mein dhoop hai.", e.transcript.value.last { it.role == ChatRole.ASSISTANT }.text)
+        assertEquals(2, provider.calls.size)
+    }
+
+    @Test
+    fun sayingRukoMakesHerStopAndListen() = runTest {
+        val e = engineWith(InstantBargeIn(), FakeTranscriber("ruko"), AiResult.Success("Bahut lamba jawab hai."))
+        e.startHandsFree()
+        voice.onResult!!("kuch batao")
+        settle()
+        assertEquals("Haan, boliye?", speaker.spoken.last())
+        assertEquals(1, provider.calls.size) // no new AI request
+        assertEquals(AssistantState.Listening, e.state.value)
+        assertEquals(2, voice.starts)
+    }
+
+    @Test
+    fun aNoiseIsAFalseAlarmAndSheContinues() = runTest {
+        // First barge-in fires (a cough), the resumed sentence is not interrupted.
+        var fired = 0
+        val once = object : BargeIn {
+            override fun start(capture: Boolean, onInterrupt: () -> Unit, onUtterance: (ByteArray?) -> Unit) {
+                if (fired++ == 0) { onInterrupt(); onUtterance(ByteArray(10)) }
+            }
+            override fun stop() {}
+        }
+        val e = engineWith(once, FakeTranscriber(""), AiResult.Success("Pehli baat. Doosri baat."))
+        e.startHandsFree()
+        voice.onResult!!("kuch batao")
+        settle()
+        assertTrue(speaker.spoken.last().startsWith("Haan, toh…"))
+        assertTrue(speaker.spoken.last().contains("Pehli baat."))
+    }
+
+    @Test
+    fun withoutTranscriberTheRecogniserTakesOverAtOnce() = runTest {
+        val e = engineWith(InstantBargeIn(), null, AiResult.Success("Bahut lamba jawab hai."))
+        e.startHandsFree()
+        voice.onResult!!("kuch batao")
+        settle()
+        assertEquals(2, voice.starts)
         assertEquals(AssistantState.Listening, e.state.value)
     }
 
     @Test
     fun typedChatNeverUsesBargeIn() = runTest {
-        var started = 0
-        val fakeBargeIn = object : BargeIn {
-            override fun start(onSpeech: () -> Unit) { started++ }
-            override fun stop() {}
+        val bargeIn = InstantBargeIn()
+        val e = engineWith(bargeIn, FakeTranscriber("x"), AiResult.Success("Haan."))
+        e.submit("hello")
+        settle()
+        assertEquals(0, bargeIn.starts)
+    }
+
+    @Test
+    fun callStyleAudioIsOnOnlyDuringHandsFree() = runTest {
+        val mode = object : ConversationMode {
+            override var active = false
+            override fun enter() { active = true }
+            override fun exit() { active = false }
         }
-        provider = FakeProvider(ArrayDeque(listOf(AiResult.Success("Haan."))))
+        provider = FakeProvider(ArrayDeque())
         val e = AssistantEngine(
             scope = backgroundScope, settings = settings, secret = { keys[it] },
             providerFor = { _, _ -> provider }, searchFor = { search },
             history = store, memories = store, actionLog = store, tools = tools,
             speaker = speaker, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
-            bargeIn = fakeBargeIn,
+            conversationMode = mode,
         )
-        e.submit("hello")
-        settle()
-        assertEquals(0, started)
+        e.startHandsFree()
+        assertTrue(mode.active)
+        e.suspendListening() // app went to the background
+        assertTrue(!mode.active)
+        e.startHandsFree()
+        e.stop()
+        assertTrue(!mode.active)
     }
 }
