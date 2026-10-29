@@ -7,7 +7,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 | Package | `com.raju.aiassistant` (debug build: `com.raju.aiassistant.debug`) |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
 | Build | Gradle 8.11.1 (wrapper), AGP 8.7.3, Kotlin 2.0.21 — use **JVM 21** in Android Studio |
-| Version | 1.2.0 — see `docs/FINAL_REPORT.md` for the feature checklist and test results |
+| Version | 1.7.1 — see `docs/FINAL_REPORT.md` for the original feature checklist |
 
 ## What it does
 - **Home:** large heart-beating Arc Reactor with a colour and rhythm for each state (Ready, Listening, Thinking, Speaking, Executing, Done, Error, Offline). It pulses with the real voice audio.
@@ -33,6 +33,9 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 ## Build in Android Studio (सीधे बिल्ड करने के स्टेप्स)
 1. **File → Open** → इस फ़ोल्डर को चुनें (जिसमें `settings.gradle.kts` है)। "Trust Project" दबाएँ।
 2. Gradle JVM पूछे तो **Use JVM 21** चुनें। "Upgrade AGP" / "Daemon toolchain" पॉपअप को अभी Ignore करें।
+   नए Android Studio का अपना JDK (JetBrains Runtime **25**) Gradle 8.11 के साथ **नहीं चलता**: "Invalid Gradle JDK configuration" दिखे तो
+   File → Settings → Build, Execution, Deployment → Build Tools → Gradle → **Gradle JDK** → 21 चुनें
+   (न हो तो उसी list में *Download JDK…* → Version **21** → JetBrains Runtime या Eclipse Temurin), फिर 🐘 *Sync Project with Gradle Files*।
 3. Sync पूरा होने दें → device **samsung SM-A146B** चुनें → **Run ▶**।
 
 Command line: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` · `./gradlew testDebugUnitTest`
@@ -80,7 +83,7 @@ Manage these anytime: Settings → **Manage app permissions**. On Samsung phones
 - **"Too many requests" / "Quota exceeded"**: wait a moment, or check your provider's plan.
 - **Voice does nothing**: install or enable *Speech Recognition & Synthesis by Google* (Play Store), and allow the microphone.
 - **Android voice sounds English**: install Hindi voice data in *Settings → General management → Text-to-speech*, then pick a voice in Seema AI Settings → Voice.
-- **Gradle JVM error**: use JVM 21 (File → Settings → Build Tools → Gradle → Gradle JDK).
+- **Gradle JVM error** (also "Invalid Gradle JDK configuration" or Java 25): use JDK 21 (File → Settings → Build Tools → Gradle → Gradle JDK; *Download JDK…* → 21 if it is not listed). Java 24/25 cannot run Gradle 8.11.
 
 ## Phone test checklist
 1. Settings → Status & permissions: every row should show the real state. Allow the microphone, contacts and app notifications.
