@@ -7,7 +7,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 | Package | `com.raju.aiassistant` (debug build: `com.raju.aiassistant.debug`) |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
 | Build | Gradle 8.11.1 (wrapper), AGP 8.7.3, Kotlin 2.0.21 — use **JVM 21** in Android Studio |
-| Version | 1.0.0 — see `docs/FINAL_REPORT.md` for the feature checklist and test results |
+| Version | 1.2.0 — see `docs/FINAL_REPORT.md` for the feature checklist and test results |
 
 ## What it does
 - **Home:** large heart-beating Arc Reactor with a colour and rhythm for each state (Ready, Listening, Thinking, Speaking, Executing, Done, Error, Offline). It pulses with the real voice audio.
@@ -22,6 +22,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 - **Incoming calls (opt-in):** after you give Seema AI Android's "call screening" role, it says who is calling: the name from Contacts, or "unknown number". It never blocks, answers or records calls.
 - **WhatsApp & notifications:** **asks first**: "WhatsApp par Mom ka message aaya hai. Kya main padhkar sunaun?" It reads the preview only after you tap **Read** (in the app or on its notification). opt-in Notification Access. Seema AI announces the sender and preview for the apps you choose, never twice for the same notification. Message content is never logged. WhatsApp drafts open in WhatsApp for *you* to send.
 - **Phone extras (v1.1, personal use):** timers and alarms (`set_timer`, `set_alarm`), flashlight, media volume, play/pause/next/previous for the music already playing, and SMS (always confirmed first; asks for SMS permission at first use). Safety Mode blocks SMS too.
+- **New in v1.2:** calendar events and reminders for later days (`add_event`, opens your calendar pre-filled; you tap Save), map directions (`navigate`: drive/walk/bike/transit), copy to clipboard, **share any text to Seema** (Share → *Ask Seema AI* → summary, dates, tasks), and long-press-icon shortcuts **Seema se bolo** (starts voice) and **Chat**. In a voice conversation the battery result is spoken too.
 - **Web search:** Tavily, summarised with numbered sources and tappable links. Website text is treated as untrusted data.
 - **Music:** YouTube Music or Spotify via Android intents, with a website fallback if the app is missing.
 - **Memory:** the assistant remembers only facts you approve. You can view, edit and delete them in Tools. Passwords, PINs, OTPs, card numbers and keys are refused.
@@ -106,3 +107,5 @@ app/src/main/java/com/raju/aiassistant/
 ├── core/          Keystore storage, connectivity, WAV/AudioTrack playback
 └── ui/            Home (reactor), Chat, Tools (quick actions, memory, history), Settings
 ```
+
+Latest changes (Hindi): `docs/CHANGES_v1.2_HINDI.md`.
