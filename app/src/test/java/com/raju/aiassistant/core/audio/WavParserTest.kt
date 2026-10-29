@@ -41,4 +41,13 @@ class WavParserTest {
         assertEquals(0f, pcmLevel(q.data, 0, q.data.size))
         assertTrue(pcmLevel(l.data, 0, l.data.size) > 0.5f)
     }
+
+    @Test
+    fun pcmIsWrappedAsWavAndParsesBack() {
+        val pcm = ByteArray(640) { (it % 50).toByte() }
+        val audio = parseWav(pcm16ToWav(pcm, 16_000))!!
+        org.junit.Assert.assertEquals(16_000, audio.sampleRate)
+        org.junit.Assert.assertEquals(1, audio.channels)
+        org.junit.Assert.assertArrayEquals(pcm, audio.data)
+    }
 }
