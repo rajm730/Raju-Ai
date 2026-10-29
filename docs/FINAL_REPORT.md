@@ -32,7 +32,16 @@ Legend: ✅ implemented and unit-tested on JVM · 🟡 implemented, not yet test
 | Backend server | ⛔ | Per your instruction; keys are stored on the device |
 | 3D hologram | ⛔ | Removed at your request; reactor only |
 
-## Voice update (latest)
+## Audit update (latest) — verified CI
+- Run https://github.com/rajm730/Raju-Ai/actions/runs/40838486995 on commit `662aa41`:
+  - `assembleDebug` — BUILD SUCCESSFUL
+  - `testDebugUnitTest` — BUILD SUCCESSFUL, log summary `UNIT TESTS: total=98 failed=0 skipped=0`
+  - `lintDebug` — BUILD SUCCESSFUL. The previous run on `85f768f` failed with 1 lint error (NewApi:
+    call-screening service needs API 29); fixed by `tools:targetApi="29"` in the manifest.
+  - Debug APK artifact `raju-ai-debug-apk` (17.9 MB zip)
+- Details of defects, fixes and what is still untested: `docs/AUDIT_REPORT.md`.
+
+## Voice update
 - Run https://github.com/rajm730/Raju-Ai/actions/runs/40830350266 on commit `fd1d1ce`:
   - `assembleDebug` — BUILD SUCCESSFUL
   - `testDebugUnitTest` — BUILD SUCCESSFUL, log summary `UNIT TESTS: total=72 failed=0 skipped=0`
