@@ -34,6 +34,12 @@ data class HomeUiState(
     val handsFree: Boolean = false,
     val voiceEngine: String = "",
     val listenEngine: String = "",
+    /** What speech recognition really understood (shown as "Recognized"), or null. */
+    val heard: String? = null,
+    /** Non-error status such as "nothing was heard". */
+    val hint: String? = null,
+    /** "Hands-free", "Continuous" or "Tap to talk": how listening continues after a reply. */
+    val listenMode: String = "",
 )
 
 private data class EngineView(val state: AssistantState, val listening: Boolean, val partial: String, val lastReply: String?, val handsFree: Boolean)
@@ -47,6 +53,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val engineView = combine(engine.state, engine.listening, engine.partialTranscript, engine.transcript, engine.handsFreeActive) { s, l, p, t, h ->
         EngineView(s, l, p, t.lastOrNull { it.role == ChatRole.ASSISTANT }?.text, h)
     }
+
+    private val voiceStatus = combine(engine.heard, engine.hint) { h, n -> h to n }
 
     val uiState: StateFlow<HomeUiState> =
         combine(engineView, c.secureKeyStore.configured, c.currentSettings, c.online, preview) { ev, configured, settings, online, previewState ->
@@ -68,8 +76,14 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 handsFree = ev.handsFree,
                 voiceEngine = settings.ttsEngine.label.substringBefore(" ").uppercase(),
                 listenEngine = settings.sttEngine.label.substringBefore(" ").uppercase(),
+                listenMode = when {
+                    ev.handsFree -> "Hands-free"
+                    settings.continuousConversation -> "Continuous"
+                    else -> "Tap to talk"
+                },
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+        }.combine(voiceStatus) { ui, (heard, hint) -> ui.copy(heard = heard, hint = hint) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun hasMicPermission() = c.voiceInput.hasPermission()
     fun startVoice() {

@@ -65,7 +65,7 @@ class SpeechPipelineTest {
     @Test
     fun playsAllChunksInOrderAndReleasesFocus() = runTest {
         val sink = FakeSink()
-        val r = SpeechPipeline(sink).speak(text, listOf(FakeProvider(TtsEngine.SARVAM)), "hi-IN", 1f)
+        val r = SpeechPipeline(sink, silent = NEVER_SILENT).speak(text, listOf(FakeProvider(TtsEngine.SARVAM)), "hi-IN", 1f)
         assertTrue(r.completed)
         assertEquals(chunkForSpeech(text).map { "SARVAM:$it" }, sink.played)
         assertEquals(0, sink.focus)
@@ -74,7 +74,7 @@ class SpeechPipelineTest {
     @Test
     fun unavailableProviderIsSkippedSilently() = runTest {
         val sink = FakeSink()
-        val r = SpeechPipeline(sink).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, available = false), FakeProvider(TtsEngine.ANDROID)), "hi-IN", 1f)
+        val r = SpeechPipeline(sink, silent = NEVER_SILENT).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, available = false), FakeProvider(TtsEngine.ANDROID)), "hi-IN", 1f)
         assertTrue(r.completed)
         assertEquals(null, r.error) // no key/offline is expected, not an error
         assertTrue(sink.played.all { it.startsWith("ANDROID:") })
@@ -87,7 +87,7 @@ class SpeechPipelineTest {
         assertTrue(chunks.size >= 3)
         val sink = FakeSink()
         val sarvam = FakeProvider(TtsEngine.SARVAM, failAfter = 1)
-        val r = SpeechPipeline(sink).speak(long, listOf(sarvam, FakeProvider(TtsEngine.ANDROID)), "hi-IN", 1f)
+        val r = SpeechPipeline(sink, silent = NEVER_SILENT).speak(long, listOf(sarvam, FakeProvider(TtsEngine.ANDROID)), "hi-IN", 1f)
         assertTrue(r.completed)
         assertEquals(chunks.size, sink.played.size) // nothing skipped
         assertEquals("SARVAM:${chunks[0]}", sink.played[0])
@@ -100,7 +100,7 @@ class SpeechPipelineTest {
     @Test
     fun allProvidersFailingReturnsError() = runTest {
         val sink = FakeSink()
-        val r = SpeechPipeline(sink).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, failAfter = 0), FakeProvider(TtsEngine.ANDROID, failAfter = 0)), "hi-IN", 1f)
+        val r = SpeechPipeline(sink, silent = NEVER_SILENT).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, failAfter = 0), FakeProvider(TtsEngine.ANDROID, failAfter = 0)), "hi-IN", 1f)
         assertFalse(r.completed)
         assertTrue(sink.played.isEmpty())
         assertEquals(0, sink.focus)
@@ -108,7 +108,7 @@ class SpeechPipelineTest {
 
     @Test
     fun noProvidersAvailableIsReported() = runTest {
-        val r = SpeechPipeline(FakeSink()).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, available = false)), "hi-IN", 1f)
+        val r = SpeechPipeline(FakeSink(), silent = NEVER_SILENT).speak(text, listOf(FakeProvider(TtsEngine.SARVAM, available = false)), "hi-IN", 1f)
         assertFalse(r.completed)
     }
 
@@ -118,7 +118,7 @@ class SpeechPipelineTest {
         val sink = FakeSink(gate)
         val provider = FakeProvider(TtsEngine.SARVAM)
         assertTrue(chunkForSpeech(longText).size >= 3)
-        val job = async { SpeechPipeline(sink).speak(longText, listOf(provider), "hi-IN", 1f) }
+        val job = async { SpeechPipeline(sink, silent = NEVER_SILENT).speak(longText, listOf(provider), "hi-IN", 1f) }
         runCurrent()
         // First chunk is "playing" (blocked); the second has already been synthesised.
         assertTrue(sink.played.isEmpty())
@@ -132,7 +132,7 @@ class SpeechPipelineTest {
         val gate = CompletableDeferred<Unit>()
         val sink = FakeSink(gate)
         val provider = FakeProvider(TtsEngine.SARVAM)
-        val job = async { SpeechPipeline(sink).speak(text, listOf(provider), "hi-IN", 1f) }
+        val job = async { SpeechPipeline(sink, silent = NEVER_SILENT).speak(text, listOf(provider), "hi-IN", 1f) }
         runCurrent()
         job.cancel()
         runCurrent()
@@ -162,5 +162,42 @@ class SpeechPipelineTest {
         assertEquals("Call ho gaya", speakableText("✅ Call ho gaya 🎉"))
         assertEquals("Dhyan dein", speakableText("⚠️ Dhyan dein"))
         assertEquals("नमस्ते", speakableText("नमस्ते")) // Devanagari untouched
+    }
+
+    @Test
+    fun aVoiceThatReturnsSilenceIsReplacedByTheNextOne() = runTest {
+        val sink = FakeSink()
+        // The first engine "succeeds" with 10 ms of zeros for a whole sentence (e.g. Hindi text given to an English voice).
+        val mute = object : TtsProvider {
+            override val engine = TtsEngine.SARVAM
+            override val label = "Mute"
+            override suspend fun isAvailable() = true
+            override suspend fun synthesize(text: String, languageTag: String, rate: Float): AiResult<PcmAudio> = AiResult.Success(PcmAudio(16000, 1, ByteArray(320)))
+        }
+        val loud = object : TtsProvider {
+            override val engine = TtsEngine.ANDROID
+            override val label = "Loud"
+            override suspend fun isAvailable() = true
+            override suspend fun synthesize(text: String, languageTag: String, rate: Float): AiResult<PcmAudio> =
+                AiResult.Success(PcmAudio(16000, 1, ByteArray(32_000) { i -> if (i % 2 == 1) ((i / 2) % 40).toByte() else 0 }))
+        }
+        val r = SpeechPipeline(sink).speak("नमस्ते, मैं सीमा हूँ।", listOf(mute, loud), "hi-IN", 1f)
+        assertTrue(r.completed)
+        assertEquals("Loud", r.engineLabel)
+        assertTrue(r.error!!.contains("no sound"))
+    }
+
+    @Test
+    fun silenceCheckJudgesLengthAndLoudness() {
+        val text = "Namaste, kaise ho aap?"
+        assertTrue(isSilent(PcmAudio(16000, 1, ByteArray(320)), text)) // 10 ms for a sentence
+        assertTrue(isSilent(PcmAudio(16000, 1, ByteArray(64_000)), text)) // 2 s of digital silence
+        val speech = ByteArray(64_000) { i -> if (i % 2 == 1) ((i / 2) % 60).toByte() else 0 }
+        assertFalse(isSilent(PcmAudio(16000, 1, speech), text))
+        assertFalse(isSilent(PcmAudio(16000, 1, ByteArray(10)), "ok")) // too short a text to judge
+    }
+
+    private companion object {
+        val NEVER_SILENT: (PcmAudio, String) -> Boolean = { _, _ -> false }
     }
 }

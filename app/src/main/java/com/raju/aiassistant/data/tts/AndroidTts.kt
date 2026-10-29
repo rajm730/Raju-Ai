@@ -8,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -85,8 +86,15 @@ class AndroidTts(private val context: Context) {
         val voice = voiceName?.let { name -> runCatching { engine.voices?.firstOrNull { it.name == name } }.getOrNull() }
             ?.takeIf { it.locale.language == locale.language }
         if (voice != null) engine.setVoice(voice) else {
-            val result = engine.setLanguage(locale)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            var result = engine.setLanguage(locale)
+            if (result < TextToSpeech.LANG_AVAILABLE && locale.country.isNotEmpty()) result = engine.setLanguage(Locale(locale.language))
+            if (result < TextToSpeech.LANG_AVAILABLE) {
+                // An English voice reads Devanagari as silence: say what is missing instead of "speaking" nothing.
+                if (locale.language == "hi" || text.any { it in '\u0900'..'\u097F' }) {
+                    return null to if (result == TextToSpeech.LANG_MISSING_DATA)
+                        "the phone's Hindi voice is not installed (Settings → Text-to-speech → Google → Install voice data → Hindi)"
+                    else "the phone's text-to-speech engine has no Hindi voice (install Google Speech Services)"
+                }
                 engine.setLanguage(Locale.forLanguageTag("en-IN"))
             }
         }
@@ -94,13 +102,19 @@ class AndroidTts(private val context: Context) {
         val file = File(context.cacheDir, "tts_${UUID.randomUUID()}.wav")
         val id = file.name
         return try {
-            val ok = suspendCancellableCoroutine { cont ->
+            // Some engines never call back for an utterance: never wait forever (Seema would stay "speaking").
+            val ok = withTimeoutOrNull(SYNTH_TIMEOUT_MS + text.length * 60L) { suspendCancellableCoroutine { cont ->
                 waiting[id] = { success -> if (cont.isActive) cont.resume(success) }
                 cont.invokeOnCancellation { waiting.remove(id); engine.stop() }
                 if (engine.synthesizeToFile(text, null, file, id) != TextToSpeech.SUCCESS) {
                     waiting.remove(id)
                     cont.resume(false)
                 }
+            } }
+            if (ok == null) {
+                waiting.remove(id)
+                engine.stop()
+                return null to "Android text-to-speech did not respond."
             }
             if (ok && file.exists()) withContext(Dispatchers.IO) { file.readBytes() } to null
             else null to "Android text-to-speech failed to synthesise speech."
@@ -111,5 +125,9 @@ class AndroidTts(private val context: Context) {
 
     fun stop() {
         tts?.stop()
+    }
+
+    private companion object {
+        const val SYNTH_TIMEOUT_MS = 15_000L
     }
 }

@@ -45,7 +45,12 @@ class MicWakeListener(private val context: Context, private val scope: Coroutine
     override fun stop() {
         job?.cancel()
         job = null
+        // Release the microphone immediately: the speech recogniser usually starts right after this,
+        // and while this recorder is still capturing it would only get silence.
+        activeRecorder?.let { runCatching { it.stop() } }
     }
+
+    @Volatile private var activeRecorder: AudioRecord? = null
 
     @SuppressLint("MissingPermission") // checked in start()
     private suspend fun waitForSpeech(): ByteArray? {
@@ -61,6 +66,7 @@ class MicWakeListener(private val context: Context, private val scope: Coroutine
         var loudFrames = 0
         try {
             recorder.startRecording()
+            activeRecorder = recorder
             while (true) {
                 if (!coroutineContext.isActive) return null
                 // 1) Wait for a voice.
@@ -95,6 +101,7 @@ class MicWakeListener(private val context: Context, private val scope: Coroutine
                 loudFrames = 0
             }
         } finally {
+            if (activeRecorder === recorder) activeRecorder = null
             runCatching { recorder.stop() }
             recorder.release()
         }

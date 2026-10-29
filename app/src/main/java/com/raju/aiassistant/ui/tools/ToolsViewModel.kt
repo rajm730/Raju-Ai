@@ -44,6 +44,9 @@ class ToolsViewModel(private val c: AppContainer) : ViewModel() {
             c.businessRepository.expensesBetween(weekFrom, weekTo).sumOf { e -> e.amountPaise }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L to 0L)
 
+    /** Recent voice-pipeline events (stages and error codes only, no words) for troubleshooting. */
+    val voiceDiagnostics: StateFlow<List<String>> = c.engine.diagnostics
+
     private val _message = MutableStateFlow<String?>(null)
     /** Real result of the last quick action / memory operation. */
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -108,6 +111,14 @@ class ToolsViewModel(private val c: AppContainer) : ViewModel() {
         c.deviceTools.copyToClipboard(pnr)
         val outcome = c.deviceTools.openWebPage("https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html?locale=en")
         _message.value = if (outcome is ToolOutcome.Done) "PNR $pnr copied — paste it on the official page." else (outcome as? ToolOutcome.Failed)?.message
+    }
+
+    fun copyDiagnostics() {
+        val text = voiceDiagnostics.value.joinToString("\n").ifBlank { "(no voice events yet)" }
+        _message.value = when (c.deviceTools.copyToClipboard(text)) {
+            is ToolOutcome.Done -> "Voice diagnostics copied — paste them when reporting a problem."
+            else -> "Could not copy the diagnostics."
+        }
     }
 
     fun clearHistory() = viewModelScope.launch {

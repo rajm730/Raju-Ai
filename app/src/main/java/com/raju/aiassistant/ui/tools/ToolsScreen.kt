@@ -53,6 +53,7 @@ fun ToolsScreen(onOpenChat: () -> Unit = {}, viewModel: ToolsViewModel = viewMod
     val expenses by viewModel.expenses.collectAsStateWithLifecycle()
     val journeys by viewModel.journeys.collectAsStateWithLifecycle()
     val totals by viewModel.totals.collectAsStateWithLifecycle()
+    val voiceEvents by viewModel.voiceDiagnostics.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Memory?>(null) }
 
     LazyColumn(
@@ -130,6 +131,18 @@ fun ToolsScreen(onOpenChat: () -> Unit = {}, viewModel: ToolsViewModel = viewMod
                 Text("• ${m.text}", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 IconButton(onClick = { editing = m }) { Icon(Icons.Filled.Edit, contentDescription = "Edit memory") }
                 IconButton(onClick = { viewModel.deleteMemory(m.id) }) { Icon(Icons.Filled.Delete, contentDescription = "Delete memory") }
+            }
+        }
+
+        item {
+            HudPanel(title = "Voice diagnostics") {
+                Text(
+                    "Each step of the last voice conversations: listening, recognised, AI request, speaking, errors. Only steps and error codes are kept — never your words or Seema's replies.",
+                    style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+                )
+                if (voiceEvents.isEmpty()) Text("No voice events yet.", color = TextSecondary)
+                voiceEvents.takeLast(12).forEach { Text(it, style = MaterialTheme.typography.labelSmall, color = TextSecondary) }
+                if (voiceEvents.isNotEmpty()) TextButton(onClick = viewModel::copyDiagnostics) { Text("Copy all") }
             }
         }
 

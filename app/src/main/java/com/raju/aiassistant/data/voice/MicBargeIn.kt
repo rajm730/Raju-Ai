@@ -60,7 +60,12 @@ class MicBargeIn(
     override fun stop() {
         job?.cancel()
         job = null
+        // Release the microphone immediately: the speech recogniser usually starts right after this,
+        // and while this recorder is still capturing it would only get silence.
+        activeRecorder?.let { runCatching { it.stop() } }
     }
+
+    @Volatile private var activeRecorder: AudioRecord? = null
 
     @SuppressLint("MissingPermission") // checked in start()
     private suspend fun watch(capture: Boolean, onInterrupt: () -> Unit): ByteArray? {
@@ -81,6 +86,7 @@ class MicBargeIn(
         val preRoll = ArrayDeque<ByteArray>()
         try {
             recorder.startRecording()
+            activeRecorder = recorder
             // 1) Watch for the user talking over the assistant.
             while (true) {
                 if (!coroutineContext.isActive) return null
@@ -106,6 +112,7 @@ class MicBargeIn(
             }
             return out.toByteArray()
         } finally {
+            if (activeRecorder === recorder) activeRecorder = null
             runCatching { recorder.stop() }
             recorder.release()
             aec?.release()

@@ -25,6 +25,12 @@ interface VoiceInput {
     fun isAvailable(): Boolean
     fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit)
     fun stop()
+    /**
+     * True when this app itself records the microphone (e.g. Deepgram). False for the system
+     * recogniser, which runs in another app: Android silences other apps' microphones while this
+     * app holds call-style audio, so call-style audio must be off while it listens.
+     */
+    fun capturesInApp(): Boolean = false
 }
 
 /**
@@ -81,8 +87,17 @@ interface Transcriber {
     suspend fun transcribe(pcm16k: ByteArray): String?
 }
 
-/** [unclear]: speech was heard but recognised with low confidence — ask the user to repeat. */
-data class VoiceError(val message: String, val noSpeech: Boolean = false, val permissionDenied: Boolean = false, val unclear: Boolean = false)
+/**
+ * [unclear]: speech was heard but recognised with low confidence — ask the user to repeat.
+ * [transient]: the recogniser was busy/restarting — harmless, just listen again.
+ */
+data class VoiceError(
+    val message: String,
+    val noSpeech: Boolean = false,
+    val permissionDenied: Boolean = false,
+    val unclear: Boolean = false,
+    val transient: Boolean = false,
+)
 
 interface ChatHistory {
     suspend fun recent(limit: Int): List<ChatMessage>

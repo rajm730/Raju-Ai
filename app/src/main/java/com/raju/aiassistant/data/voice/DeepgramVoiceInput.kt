@@ -52,6 +52,11 @@ class DeepgramVoiceInput(
 
     override fun isAvailable(): Boolean = configured()
 
+    override fun capturesInApp() = true
+
+    /** The recorder in use, so [stop] can release the microphone at once (not after the next frame). */
+    @Volatile private var activeRecorder: AudioRecord? = null
+
     override fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             onError(VoiceError("Microphone permission is needed for voice. Allow it when asked, or in Settings → Apps → Seema AI → Permissions.", permissionDenied = true))
@@ -99,6 +104,8 @@ class DeepgramVoiceInput(
     override fun stop() {
         job?.cancel()
         job = null
+        // Free the microphone right now, so the next recogniser (or barge-in) gets real audio.
+        activeRecorder?.let { runCatching { it.stop() } }
         _listening.value = false
     }
 
@@ -127,6 +134,7 @@ class DeepgramVoiceInput(
         try {
             try {
                 recorder.startRecording()
+                activeRecorder = recorder
             } catch (e: IllegalStateException) {
                 throw MicrophoneException("recording could not start")
             }
@@ -135,6 +143,7 @@ class DeepgramVoiceInput(
                 var read = 0
                 while (read < FRAME_BYTES) {
                     val n = recorder.read(frame, read, FRAME_BYTES - read)
+                    coroutineContext.ensureActive() // stopped while reading: not a microphone failure
                     if (n <= 0) throw MicrophoneException("microphone read failed ($n)")
                     read += n
                 }
@@ -146,6 +155,7 @@ class DeepgramVoiceInput(
                 }
             }
         } finally {
+            if (activeRecorder === recorder) activeRecorder = null
             runCatching { recorder.stop() }
             recorder.release()
         }
@@ -196,6 +206,9 @@ class SwitchingVoiceInput(
     private fun current() = if (useDeepgram() && deepgram.isAvailable()) deepgram else android
 
     override fun isAvailable(): Boolean = current().isAvailable()
+
+    /** Whether the input that will be used for the next [start] records inside this app. */
+    override fun capturesInApp(): Boolean = current().capturesInApp()
 
     override fun start(languageTag: String, onResult: (String) -> Unit, onError: (VoiceError) -> Unit) {
         stop()
