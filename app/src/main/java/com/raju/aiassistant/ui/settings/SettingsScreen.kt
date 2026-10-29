@@ -287,7 +287,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             ToggleRow("Speak replies aloud", s.autoSpeakReplies, viewModel::setAutoSpeak)
             ToggleRow("Hands-free: start listening when the app opens and keep listening until you press Stop", s.autoListen, viewModel::setAutoListen)
             Text(
-                "The microphone is used only while Seema AI is on screen; it stops when you leave the app. Tip: Deepgram listening (above) is silent — the Google recogniser may beep each time it restarts.",
+                "The microphone is used only while Seema AI is on screen; it stops when you leave the app. With a Deepgram key saved, hands-free listening uses Deepgram (completely silent); otherwise the Google recogniser's start beep is muted.",
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
+            ToggleRow("Interrupt by voice: start talking while Seema speaks and she stops to listen", s.bargeIn, viewModel::setBargeIn)
+            Text(
+                "Works best when you speak a little louder than her voice. You can also tap the reactor on Home to stop her talking.",
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
             ToggleRow("Continuous conversation (keeps listening after each reply while the app is open)", s.continuousConversation, viewModel::setContinuous)

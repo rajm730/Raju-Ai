@@ -21,6 +21,7 @@ import com.raju.aiassistant.data.tts.ElevenLabsTtsProvider
 import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
 import com.raju.aiassistant.data.voice.DeepgramVoiceInput
+import com.raju.aiassistant.data.voice.MicBargeIn
 import com.raju.aiassistant.data.voice.SwitchingVoiceInput
 import com.raju.aiassistant.data.voice.VoiceInputManager
 import com.raju.aiassistant.domain.model.SecretId
@@ -95,8 +96,18 @@ class AppContainer(context: Context) {
         )
     }
     /** What the assistant listens with: Android's recogniser or Deepgram, as chosen in Settings. */
-    val assistantVoiceInput by lazy {
-        SwitchingVoiceInput(voiceInput, deepgramVoiceInput, { currentSettings.value.sttEngine == SttEngine.DEEPGRAM }, appScope)
+    val assistantVoiceInput: SwitchingVoiceInput by lazy {
+        SwitchingVoiceInput(
+            voiceInput,
+            deepgramVoiceInput,
+            useDeepgram = {
+                // Hands-free restarts the recogniser often; Deepgram does that silently, so it is
+                // preferred whenever its key is saved.
+                currentSettings.value.sttEngine == SttEngine.DEEPGRAM ||
+                    (engine.handsFreeActive.value && SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value)
+            },
+            scope = appScope,
+        )
     }
     val deviceTools by lazy { AndroidDeviceTools(appContext) }
     val announcementDeduper = AnnouncementDeduper()
@@ -122,7 +133,7 @@ class AppContainer(context: Context) {
         speaker.stop()
     }
 
-    val engine by lazy {
+    val engine: AssistantEngine by lazy {
         AssistantEngine(
             scope = appScope,
             settings = currentSettings,
@@ -136,6 +147,7 @@ class AppContainer(context: Context) {
             speaker = speaker,
             voice = assistantVoiceInput,
             isOnline = { online.value },
+            bargeIn = MicBargeIn(appContext, appScope) { speaker.level.value },
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }

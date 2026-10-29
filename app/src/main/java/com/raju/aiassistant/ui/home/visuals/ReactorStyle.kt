@@ -59,7 +59,7 @@ fun statusHintFor(state: AssistantState): String = when (state) {
     AssistantState.Idle -> "Ready — tap Voice to speak or Chat to type"
     AssistantState.Listening -> "सुन रही हूँ… Listening"
     AssistantState.Thinking -> "सोच रही हूँ… Thinking"
-    AssistantState.Speaking -> "बोल रही हूँ… Speaking"
+    AssistantState.Speaking -> "बोल रही हूँ… (बीच में बोलें या reactor दबाएँ तो रुक जाऊँगी)"
     AssistantState.Executing -> "काम कर रही हूँ… Executing a task"
     AssistantState.Success -> "हो गया! Task completed"
     AssistantState.Error -> "कुछ गड़बड़ हुई — Something went wrong"

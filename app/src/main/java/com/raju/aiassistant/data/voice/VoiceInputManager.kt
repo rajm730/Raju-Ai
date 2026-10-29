@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -41,7 +44,11 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
         recognizer = r
         _partial.value = ""
         r.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { _listening.value = true }
+            override fun onReadyForSpeech(params: Bundle?) {
+                _listening.value = true
+                // The start beep has played (muted) by now: give the user their sound back shortly after.
+                handler.postDelayed(unmuteRunnable, 350)
+            }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -53,6 +60,7 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
             }
 
             override fun onResults(results: Bundle?) {
+                unmuteBeep()
                 _listening.value = false
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 release()
@@ -60,6 +68,7 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
             }
 
             override fun onError(error: Int) {
+                unmuteBeep()
                 _listening.value = false
                 release()
                 onError(mapError(error))
@@ -73,10 +82,37 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
         }
         _listening.value = true
+        muteBeep()
         r.startListening(intent)
     }
 
+    // ------------------------------------------------------------ start-beep muting
+    // Google's recogniser plays a "tu-dung" beep every time it starts. In hands-free mode it restarts
+    // often, so the streams that carry the beep are muted for a moment around each start and always
+    // restored (also by a safety timer), never left muted.
+    private val audio: AudioManager? = context.getSystemService(AudioManager::class.java)
+    private val handler = Handler(Looper.getMainLooper())
+    private var mutedStreams: List<Int> = emptyList()
+    private val unmuteRunnable = Runnable { unmuteBeep() }
+
+    private fun muteBeep() {
+        val am = audio ?: return
+        if (mutedStreams.isNotEmpty()) return
+        mutedStreams = BEEP_STREAMS.filter { stream ->
+            !am.isStreamMute(stream) && runCatching { am.adjustStreamVolume(stream, AudioManager.ADJUST_MUTE, 0) }.isSuccess
+        }
+        handler.postDelayed(unmuteRunnable, 1_500) // safety net
+    }
+
+    private fun unmuteBeep() {
+        handler.removeCallbacks(unmuteRunnable)
+        val am = audio ?: return
+        mutedStreams.forEach { stream -> runCatching { am.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0) } }
+        mutedStreams = emptyList()
+    }
+
     override fun stop() {
+        unmuteBeep()
         recognizer?.let { runCatching { it.cancel() } }
         release()
         _listening.value = false
@@ -95,5 +131,9 @@ class VoiceInputManager(private val context: Context) : VoiceInput {
         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> VoiceError("Speech recognizer is busy. Try again.")
         SpeechRecognizer.ERROR_SERVER -> VoiceError("Speech recognition server error.")
         else -> VoiceError("Speech recognition error ($code).")
+    }
+
+    private companion object {
+        val BEEP_STREAMS = listOf(AudioManager.STREAM_MUSIC, AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)
     }
 }

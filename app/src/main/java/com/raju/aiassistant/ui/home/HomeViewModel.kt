@@ -83,6 +83,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         if (engine.handsFreeActive.value) c.stopEverything() else engine.startHandsFree()
     }
 
+    /** Tap on the reactor while Seema speaks: she stops talking and (hands-free) listens again. */
+    fun interrupt() = engine.interrupt()
+
     /** "Resume" on the paused banner: un-pause, then listen hands-free if that is enabled. */
     fun resume() {
         viewModelScope.launch {
