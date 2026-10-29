@@ -99,6 +99,8 @@ class AssistantEngine(
     private val hourOfDay: () -> Int = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
     private val business: BusinessStore = NoBusinessStore,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    /** Privacy-safe diagnostics (stages, error codes, lengths — never what the user said). */
+    private val log: (String) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(AssistantState.Idle)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
@@ -135,6 +137,30 @@ class AssistantEngine(
     /** True while the assistant is in hands-free (always listening) mode. */
     val handsFreeActive: StateFlow<Boolean> = _handsFreeActive.asStateFlow()
 
+    private val _heard = MutableStateFlow<String?>(null)
+    /** The last thing speech recognition really understood ("Recognized" stage); null while listening. */
+    val heard: StateFlow<String?> = _heard.asStateFlow()
+
+    private val _hint = MutableStateFlow<String?>(null)
+    /** A short status for the user that is not an error (e.g. "nothing was heard"); cleared on the next step. */
+    val hint: StateFlow<String?> = _hint.asStateFlow()
+
+    private val _diagnostics = MutableStateFlow<List<String>>(emptyList())
+    /** Last voice-pipeline events, for Tools → Voice diagnostics. No user words or replies are kept. */
+    val diagnostics: StateFlow<List<String>> = _diagnostics.asStateFlow()
+
+    private fun trace(event: String) {
+        log(event)
+        val t = clock()
+        val stamp = "%02d:%02d:%02d".format((t / 3_600_000) % 24, (t / 60_000) % 60, (t / 1000) % 60)
+        _diagnostics.value = (_diagnostics.value + "$stamp $event").takeLast(40)
+    }
+
+    /** Each listen() gets a number; a delayed re-listen only runs if no newer listen/stop happened. */
+    private var listenGen = 0
+    /** True while the current turn came from the user's voice (errors are then also spoken). */
+    private var voiceTurn = false
+
     /** Sleep mode (hands-free only): the recogniser is off and a light on-phone detector waits for her name. */
     private var asleep = false
     /** Last time the user spoke or Seema finished a turn; the sleep timer counts from here. */
@@ -168,6 +194,7 @@ class AssistantEngine(
         lastActivityAt = clock()
         cancelWork()
         lastUserText = trimmed
+        trace("submit ${if (fromVoice) "voice" else "typed"} (${trimmed.length} chars)")
         job = scope.launch { handleUserMessage(trimmed, fromVoice) }
     }
 
@@ -176,7 +203,9 @@ class AssistantEngine(
      * joining word, the assistant keeps listening a few seconds and answers the whole sentence.
      */
     private fun onHeard(heard: String) {
+        trace("recognized (${heard.length} chars)")
         val text = heldVoiceText?.let { "$it $heard" } ?: heard
+        _heard.value = text
         heldVoiceText = null
         heldJob?.cancel()
         if (CONTINUATION.containsMatchIn(text.trim()) && text.trim().split(Regex("\\s+")).size >= 2) {
@@ -232,8 +261,11 @@ class AssistantEngine(
             _state.value = AssistantState.Idle
         }
         if (settings.value.assistantPaused) return
-        // Call-style audio turns on the phone's echo canceller, so the user can talk over Seema.
-        if (settings.value.bargeIn) conversationMode.enter()
+        trace("hands-free on")
+        // Call-style audio turns on the phone's echo canceller, so the user can talk over Seema —
+        // but only when this app records the microphone itself (Deepgram). Android silences other
+        // apps' microphones during call-style audio, so the Google recogniser would hear nothing.
+        if (callStyleAllowed()) conversationMode.enter()
         val busy = _state.value == AssistantState.Thinking || _state.value == AssistantState.Speaking || _state.value == AssistantState.Executing
         if (!_voiceSession.value && !busy && _pending.value == null) startVoice()
     }
@@ -250,16 +282,27 @@ class AssistantEngine(
         heldVoiceText = null
         if (!_voiceSession.value) return
         _voiceSession.value = false
+        listenGen++
         voice.stop()
         if (_state.value == AssistantState.Listening) _state.value = AssistantState.Idle
     }
 
+    private fun callStyleAllowed() = settings.value.bargeIn && voice.capturesInApp()
+
     private fun listen() {
+        val gen = ++listenGen
         _state.value = AssistantState.Listening
+        _heard.value = null
+        _hint.value = null
+        // The system recogniser (another app) gets only silence while call-style audio is on.
+        if (!voice.capturesInApp()) conversationMode.exit()
+        trace("listen ${if (handsFree) "hands-free" else "tap"} ${if (voice.capturesInApp()) "in-app" else "system"} recogniser")
         voice.start(
             settings.value.speechLanguage,
-            onResult = { heard -> onHeard(heard) },
+            onResult = { heard -> if (gen == listenGen) onHeard(heard) else trace("stale result dropped") },
             onError = { err ->
+                if (gen != listenGen) { trace("stale error dropped"); return@start }
+                trace("listen error: ${err.message}")
                 val keepGoing = handsFree && _voiceSession.value && !settings.value.assistantPaused && !err.permissionDenied
                 val held = heldVoiceText
                 if (held != null && (err.noSpeech || err.unclear)) {
@@ -277,6 +320,10 @@ class AssistantEngine(
                 } else if (keepGoing && (err.noSpeech || err.unclear)) {
                     // Silence is normal in hands-free mode: listen again, or doze off after a quiet while.
                     if (sleepDue()) goToSleep() else relisten(300)
+                } else if (err.transient && _voiceSession.value && listenFailures < MAX_LISTEN_FAILURES) {
+                    // Recogniser busy/restarting: harmless, try again shortly (also in tap-to-talk).
+                    listenFailures++
+                    relisten(700)
                 } else if (keepGoing && listenFailures < MAX_LISTEN_FAILURES) {
                     listenFailures++
                     relisten(2_000)
@@ -287,16 +334,24 @@ class AssistantEngine(
                         handsFree = false
                         _handsFreeActive.value = false
                     }
-                    if (err.noSpeech) _state.value = AssistantState.Idle else failAsync(err.message)
+                    if (err.noSpeech) {
+                        // Tap-to-talk heard nothing: say so on screen instead of silently going idle.
+                        _hint.value = if (prefersHindiUi()) "कुछ सुनाई नहीं दिया — Mic दबाकर फिर बोलिए।" else "I didn't hear anything — tap Mic and speak again."
+                        _state.value = AssistantState.Idle
+                    } else failAsync(err.message)
                 }
             },
         )
     }
 
+    private fun prefersHindiUi() = settings.value.speechLanguage.startsWith("hi")
+
+    /** Listens again after [delayMs], unless something newer (a new listen, Stop, a reply) happened meanwhile. */
     private fun relisten(delayMs: Long) {
+        val gen = listenGen
         scope.launch {
             delay(delayMs)
-            if (handsFree && _voiceSession.value && _state.value == AssistantState.Listening) listen()
+            if (gen == listenGen && _voiceSession.value && _state.value == AssistantState.Listening) listen()
         }
     }
 
@@ -309,9 +364,12 @@ class AssistantEngine(
         heldVoiceText = null
         conversationMode.exit()
         _voiceSession.value = false
+        listenGen++
         voice.stop()
         speaker.stop()
         cancelWork()
+        _heard.value = null
+        trace("stop")
         _state.value = AssistantState.Idle
     }
 
@@ -360,7 +418,7 @@ class AssistantEngine(
                 // "Seema, kal ka mausam batao": wake and answer straight away.
                 leaveSleep()
                 _voiceSession.value = true
-                if (settings.value.bargeIn) conversationMode.enter()
+                if (callStyleAllowed()) conversationMode.enter()
                 submit(request, fromVoice = true)
             }
         }
@@ -373,7 +431,7 @@ class AssistantEngine(
         lastActivityAt = clock()
         unclearInARow = 0
         _voiceSession.value = true
-        if (settings.value.bargeIn) conversationMode.enter()
+        if (callStyleAllowed()) conversationMode.enter()
         if (!greet) { listen(); return }
         cancelWork()
         job = scope.launch {
@@ -400,6 +458,7 @@ class AssistantEngine(
 
     private suspend fun handleUserMessage(text: String, fromVoice: Boolean, recordUser: Boolean = true) {
         _lastError.value = null
+        voiceTurn = fromVoice
         if (recordUser) record(ChatRole.USER, text)
         val s = settings.value
 
@@ -436,10 +495,16 @@ class AssistantEngine(
         val system = buildSystemPrompt(memoryTexts, nowDescription(), s.personality, context)
         val turns = toTurns(_transcript.value, s.historyLimit * 2, ModelAdvice.historyCharBudget(model))
 
+        trace("ai request ${providerId.shortName}")
         val raw = when (val r = provider.chat(model, system, turns)) {
             is AiResult.Success -> r.value
-            is AiResult.Failure -> { fail(r.message, if (r.kind == FailureKind.NETWORK) AssistantState.Offline else AssistantState.Error); return }
+            is AiResult.Failure -> {
+                trace("ai failed: ${r.kind}")
+                fail(r.message, if (r.kind == FailureKind.NETWORK) AssistantState.Offline else AssistantState.Error)
+                return
+            }
         }
+        trace("ai reply (${raw.length} chars)")
         val parsedRaw = parseReply(raw)
         val repetition = collapseRepetition(parsedRaw.text)
         val parsed = parsedRaw.copy(text = repetition.text)
@@ -471,6 +536,7 @@ class AssistantEngine(
 
     private fun finishTurn() {
         val s = settings.value
+        voiceTurn = false
         lastActivityAt = clock() // the sleep timer counts from the end of her answer
         if (_voiceSession.value && (s.continuousConversation || handsFree) && !s.assistantPaused) {
             listen()
@@ -488,25 +554,33 @@ class AssistantEngine(
         val canBargeIn = allowBargeIn && settings.value.bargeIn && (handsFree || _voiceSession.value)
         val capture = canBargeIn && transcriber?.isAvailable() == true
         val utterance = CompletableDeferred<ByteArray?>()
-        var interrupted = false
+        // Set from the microphone thread: atomic, so the speaking coroutine always sees it.
+        val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
         if (canBargeIn) {
             bargeIn.start(
                 capture = capture,
-                onInterrupt = { interrupted = true; speaker.stop() },
+                onInterrupt = { if (interrupted.compareAndSet(false, true)) speaker.stop() },
                 onUtterance = { utterance.complete(it) },
             )
         }
+        trace("speak (${spoken.length} chars)${if (canBargeIn) " barge-in on" else ""}")
         val result = try {
             speaker.speak(spoken)
         } finally {
-            if (!interrupted) bargeIn.stop()
+            if (!interrupted.get()) bargeIn.stop()
         }
-        if (interrupted) {
+        if (interrupted.get()) {
+            trace("interrupted by the user after ${speaker.playedChunks} part(s)")
             onInterrupted(spoken, capture, utterance, depth)
             return
         }
-        // The same fallback reason (e.g. "ElevenLabs failed …") is shown once, not under every reply.
-        if (result.error != null && result.error != lastVoiceNote) note("Voice: ${result.error}")
+        trace("spoke: ${result.engineLabel}, ${if (result.completed) "complete" else "NOT complete"}${result.error?.let { " — $it" } ?: ""}")
+        when {
+            // Nothing (or not all) was heard: always tell the user, never fail silently.
+            !result.completed && result.error != null -> note("🔇 Voice failed: ${result.error}")
+            // A fallback reason (e.g. "ElevenLabs failed … using Android") is shown once, not under every reply.
+            result.error != null && result.error != lastVoiceNote -> note("Voice: ${result.error}")
+        }
         lastVoiceNote = result.error
         _state.value = AssistantState.Thinking
     }
@@ -919,6 +993,12 @@ class AssistantEngine(
     private suspend fun fail(message: String, state: AssistantState = AssistantState.Error) {
         _lastError.value = message
         record(ChatRole.SYSTEM, "⚠️ $message")
+        trace("error shown")
+        if (voiceTurn) {
+            // The user is talking, maybe not looking at the screen: say briefly that it failed.
+            voiceTurn = false
+            say(if (prefersHindi()) "माफ़ कीजिए, अभी जवाब नहीं दे पाई — वजह स्क्रीन पर लिखी है।" else "Sorry, I couldn't answer that — the reason is on the screen.", allowBargeIn = false)
+        }
         _state.value = state
         _voiceSession.value = false
         scheduleErrorReset()

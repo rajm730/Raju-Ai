@@ -77,17 +77,21 @@ class AudioPlayer(context: Context, private val callStyle: () -> Boolean = { fal
             current = track to audio
             track.play()
             var offset = 0
+            var stalls = 0
             while (offset < audio.data.size) {
                 coroutineContext.ensureActive()
                 val len = minOf(chunk, audio.data.size - offset)
                 onLevel(pcmLevel(audio.data, offset, len))
                 val written = track.write(audio.data, offset, len)
-                if (written < 0) break
+                if (written < 0) throw IllegalStateException("audio output error ($written)")
+                if (written == 0 && ++stalls > 50) throw IllegalStateException("audio output is not accepting data")
                 offset += written
             }
-            // Wait for the buffered tail to finish playing.
+            // Wait for the buffered tail to finish playing — but never longer than the audio itself
+            // plus a second (a stuck output must not leave Seema "speaking" forever).
             val totalFrames = audio.frameCount
-            while (track.playbackHeadPosition < totalFrames && track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+            val deadline = System.nanoTime() + (totalFrames * 1_000_000_000L / audio.sampleRate) + 1_000_000_000L
+            while (track.playbackHeadPosition < totalFrames && track.playState == AudioTrack.PLAYSTATE_PLAYING && System.nanoTime() < deadline) {
                 coroutineContext.ensureActive()
                 delay(20)
             }

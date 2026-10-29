@@ -192,6 +192,7 @@ fun HomeScreen(
                 // The state tag breathes with the reactor's own (frame-capped) clock.
                 StatusChip(assistantState.label, Color(style.primaryArgb), pulse = if (running) ({ 0.65f + 0.35f * sin(timeProvider() * 3f) }) else null)
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
+                StatusChip("Mode: ${state.listenMode}", MaterialTheme.colorScheme.secondary)
                 StatusChip(
                     when {
                         state.listening -> "Mic: listening"
@@ -247,6 +248,11 @@ fun HomeScreen(
             val caption = when {
                 state.previewState != null -> "Visual preview only — nothing is running."
                 state.listening && state.partialTranscript.isNotBlank() -> "“${state.partialTranscript}”"
+                // "Listening" is shown only once the microphone is really open, never as proof of anything.
+                assistantState == AssistantState.Listening && !state.listening -> "🎙 माइक शुरू हो रहा है… Starting the microphone"
+                state.heard != null && (assistantState == AssistantState.Thinking || assistantState == AssistantState.Executing) ->
+                    "✓ सुना (Recognized): “${state.heard}” — सोच रही हूँ…"
+                assistantState == AssistantState.Idle && state.hint != null -> state.hint!!
                 assistantState == AssistantState.Idle && state.lastReply != null -> state.lastReply!!
                 assistantState == AssistantState.Idle && !state.providerKeySaved -> "Add your ${state.defaultProvider.shortName} API key in Settings to start."
                 else -> statusHintFor(assistantState)

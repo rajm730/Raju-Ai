@@ -55,6 +55,9 @@ class AssistantEngineTest {
         override val listening = MutableStateFlow(false)
         override val partial = MutableStateFlow("")
         var starts = 0
+        /** Deepgram-like (records in this app) by default; false = the system recogniser. */
+        var inApp = true
+        override fun capturesInApp() = inApp
         var onResult: ((String) -> Unit)? = null
         var onError: ((VoiceError) -> Unit)? = null
         override fun isAvailable() = true
@@ -692,5 +695,169 @@ class AssistantEngineTest {
         val last = e.transcript.value.last { it.role == ChatRole.ASSISTANT }
         assertTrue(last.text.contains("Sources:") && last.text.contains("https://site.com"))
         assertEquals(1, last.text.split("https://site.com").size - 1) // duplicate results merged
+    }
+
+    // ---------------------------------------------------------------- voice reliability
+
+    private class Mode : ConversationMode {
+        override var active = false
+        var everActive = false
+        override fun enter() { active = true; everActive = true }
+        override fun exit() { active = false }
+    }
+
+    private fun TestScope.engineWithMode(mode: ConversationMode, speakerOverride: Speaker = speaker, vararg replies: AiResult<String>): AssistantEngine {
+        provider = FakeProvider(ArrayDeque(replies.toList()))
+        return AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speakerOverride, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
+            conversationMode = mode,
+        )
+    }
+
+    @Test
+    fun systemRecogniserNeverListensUnderCallStyleAudio() = runTest {
+        // Android silences other apps' microphones during call-style audio: the Google recogniser would hear nothing.
+        voice.inApp = false
+        val mode = Mode()
+        val e = engineWithMode(mode, speaker, AiResult.Success("Haan ji, sun rahi hoon."))
+        e.startHandsFree()
+        voice.onResult!!("हे सीमा, तुम सुन रही हो?")
+        settle()
+        assertTrue(!mode.everActive)
+        assertEquals("Haan ji, sun rahi hoon.", speaker.spoken.last())
+        assertEquals(2, voice.starts)
+    }
+
+    @Test
+    fun staleRecognitionCallbacksAreIgnored() = runTest {
+        val e = engine(AiResult.Success("Naya jawab."))
+        e.startVoice()
+        val oldResult = voice.onResult!!
+        val oldError = voice.onError!!
+        e.stop()
+        e.startVoice()
+        oldResult("purani baat")
+        oldError(VoiceError("late error"))
+        settle()
+        assertEquals(0, provider.calls.size)
+        assertTrue(e.transcript.value.none { it.text.contains("late error") })
+        voice.onResult!!("nayi baat")
+        settle()
+        assertEquals(1, provider.calls.size)
+        assertEquals("Naya jawab.", speaker.spoken.single())
+    }
+
+    @Test
+    fun aDelayedRelistenNeverRestartsANewerSession() = runTest {
+        val e = engine()
+        e.startHandsFree()
+        voice.onError!!(VoiceError("silence", noSpeech = true)) // schedules a re-listen in 300 ms
+        e.startVoice() // the user taps Mic meanwhile
+        assertEquals(2, voice.starts)
+        settle()
+        assertEquals(2, voice.starts) // the old re-listen did not cut the new session
+    }
+
+    @Test
+    fun aBusyRecogniserIsRetriedQuietlyAlsoInTapMode() = runTest {
+        val e = engine()
+        e.startVoice()
+        voice.onError!!(VoiceError("busy", transient = true))
+        settle()
+        assertEquals(2, voice.starts)
+        assertEquals(AssistantState.Listening, e.state.value)
+        assertTrue(e.transcript.value.isEmpty())
+    }
+
+    @Test
+    fun hearingNothingInTapModeSaysSoOnScreen() = runTest {
+        val e = engine()
+        e.startVoice()
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        settle()
+        assertEquals(AssistantState.Idle, e.state.value)
+        assertNotNull(e.hint.value)
+        assertNull(e.lastError.value) // not an error: no Retry of an old message
+    }
+
+    @Test
+    fun recognisedTextIsShownBeforeTheAnswer() = runTest {
+        val e = engine(AiResult.Success("Haan."))
+        e.startVoice()
+        voice.onResult!!("tum sun rahi ho")
+        assertEquals("tum sun rahi ho", e.heard.value)
+    }
+
+    @Test
+    fun anEmptyAiReplyIsShownAndSpokenInAVoiceTurn() = runTest {
+        val e = engine(AiResult.Success("   "))
+        e.startVoice()
+        voice.onResult!!("hello")
+        settle()
+        assertTrue(e.transcript.value.any { it.text.contains("empty reply") })
+        assertTrue(speaker.spoken.last(), speaker.spoken.last().contains("couldn't answer"))
+    }
+
+    @Test
+    fun aTypedRequestErrorIsNotSpoken() = runTest {
+        val e = engine(AiResult.Failure(FailureKind.RATE_LIMITED, "Rate limited (HTTP 429)"))
+        e.submit("hello")
+        settle()
+        assertTrue(e.transcript.value.any { it.text.contains("429") })
+        assertTrue(speaker.spoken.isEmpty())
+    }
+
+    @Test
+    fun everyVoiceFailureIsReportedNotOnlyTheFirst() = runTest {
+        val mute = object : Speaker {
+            override val speaking = MutableStateFlow(false)
+            override val level = MutableStateFlow(0f)
+            override suspend fun speak(text: String) = SpeakResult(false, "none", "No text-to-speech engine is available.")
+            override fun stop() {}
+        }
+        val e = engineWithMode(Mode(), mute, AiResult.Success("Ek."), AiResult.Success("Do."))
+        e.submit("ek")
+        settle()
+        e.submit("do")
+        settle()
+        assertEquals(2, e.transcript.value.count { it.text.startsWith("🔇 Voice failed") })
+    }
+
+    @Test
+    fun stoppingWhileThinkingNeverSpeaksTheStaleAnswer() = runTest {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val slow = object : AiProvider {
+            override val id = ProviderId.GEMINI
+            override suspend fun listModels(): AiResult<List<AiModel>> = AiResult.Success(listOf(AiModel("gemini-2.5-flash", "Flash")))
+            override suspend fun chat(model: String, systemPrompt: String, turns: List<Turn>): AiResult<String> { gate.await(); return AiResult.Success("Purana jawab.") }
+        }
+        val e = AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> slow }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speaker, voice = voice, isOnline = { online }, clock = { 0L }, nowDescription = { "now" },
+        )
+        e.submit("kuch batao")
+        runCurrent()
+        assertEquals(AssistantState.Thinking, e.state.value)
+        e.stop()
+        gate.complete(Unit)
+        settle()
+        assertTrue(speaker.spoken.isEmpty())
+        assertEquals(AssistantState.Idle, e.state.value)
+    }
+
+    @Test
+    fun handsFreeRecoversAndListensAgainAfterAnAiError() = runTest {
+        val e = engine(AiResult.Failure(FailureKind.SERVER, "Server error (HTTP 503)"))
+        e.startHandsFree()
+        voice.onResult!!("kuch batao")
+        settle()
+        assertTrue(e.transcript.value.any { it.text.contains("503") })
+        assertEquals(2, voice.starts) // listening again after showing (and saying) the error
+        assertEquals(AssistantState.Listening, e.state.value)
     }
 }

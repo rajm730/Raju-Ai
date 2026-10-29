@@ -99,7 +99,7 @@ class AppContainer(context: Context) {
         )
         TtsManager(appScope, SpeechPipeline(audioPlayer), providers, androidTts, currentSettings)
     }
-    val voiceInput by lazy { VoiceInputManager(appContext) }
+    val voiceInput by lazy { VoiceInputManager(appContext) { android.util.Log.i("SeemaVoice", it) } }
     val deepgramVoiceInput by lazy {
         DeepgramVoiceInput(
             appContext, http, appScope,
@@ -194,6 +194,7 @@ class AppContainer(context: Context) {
             transcriber = deepgramTranscriber,
             wakeListener = MicWakeListener(appContext, appScope),
             business = businessRepository,
+            log = { android.util.Log.i("SeemaVoice", it) },
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }

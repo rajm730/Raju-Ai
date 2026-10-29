@@ -27,6 +27,19 @@ interface PcmSink {
     suspend fun play(audio: PcmAudio, onLevel: (Float) -> Unit)
 }
 
+/**
+ * True when synthesised audio is far too short or quiet for the words it should contain: about
+ * 40 ms of sound per letter is expected; under a quarter of that (or pure silence) means the voice
+ * could not read the text (e.g. Devanagari given to an English-only voice).
+ */
+fun isSilent(audio: PcmAudio, text: String): Boolean {
+    val letters = text.count { it.isLetterOrDigit() }
+    if (letters < 3 || audio.sampleRate <= 0) return false
+    val seconds = audio.frameCount.toDouble() / audio.sampleRate
+    if (seconds < letters * 0.010) return true
+    return com.raju.aiassistant.core.audio.pcmLevel(audio.data, 0, audio.data.size) < 0.002f
+}
+
 /** The user's chosen engine first, then the others in their default order — so there is always a fallback. */
 fun providerOrder(selected: TtsEngine): List<TtsEngine> = listOf(selected) + TtsEngine.entries.filter { it != selected }
 
@@ -44,7 +57,11 @@ fun languageFor(chunk: String, preferredTag: String): String = if (DEVANAGARI.co
  * dropped for the rest of the utterance and the next provider takes over from the same chunk.
  * Cancelling the calling coroutine stops synthesis and playback immediately.
  */
-class SpeechPipeline(private val sink: PcmSink) {
+class SpeechPipeline(
+    private val sink: PcmSink,
+    /** Detects a voice that "succeeded" but produced no real sound (see [isSilent]). */
+    private val silent: (PcmAudio, String) -> Boolean = ::isSilent,
+) {
 
     suspend fun speak(
         text: String,
@@ -71,7 +88,11 @@ class SpeechPipeline(private val sink: PcmSink) {
                     while (audio == null && usable.isNotEmpty()) {
                         val provider = usable.first()
                         when (val r = provider.synthesize(chunk, languageFor(chunk, preferredLanguage), rate)) {
-                            is AiResult.Success -> audio = r.value
+                            // A voice that returns (almost) no sound for real words has failed, even if it says OK.
+                            is AiResult.Success -> if (silent(r.value, chunk)) {
+                                usable.removeAt(0)
+                                fallbackNote = "${provider.label} returned no sound" + (usable.firstOrNull()?.let { " — using ${it.label}." } ?: ".")
+                            } else audio = r.value
                             is AiResult.Failure -> {
                                 usable.removeAt(0)
                                 fallbackNote = "${provider.label} failed (${r.message})" +
@@ -97,7 +118,12 @@ class SpeechPipeline(private val sink: PcmSink) {
                     }
                     lastLabel = label
                     onEngine(label)
-                    sink.play(audio, onLevel)
+                    try {
+                        sink.play(audio, onLevel)
+                    } catch (e: IllegalStateException) {
+                        producer.cancel()
+                        return@coroutineScope SpeakResult(false, lastLabel, "The phone's audio output failed (${e.message}).")
+                    }
                     onChunkPlayed()
                 }
                 SpeakResult(true, lastLabel, fallbackNote)
