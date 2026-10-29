@@ -14,11 +14,14 @@ import com.raju.aiassistant.data.repository.MemoryRepository
 import com.raju.aiassistant.data.search.TavilyClient
 import com.raju.aiassistant.data.tools.AndroidDeviceTools
 import com.raju.aiassistant.data.tts.AndroidTts
+import com.raju.aiassistant.data.tts.AndroidTtsProvider
+import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
 import com.raju.aiassistant.data.voice.VoiceInputManager
 import com.raju.aiassistant.domain.assistant.AnnouncementDeduper
 import com.raju.aiassistant.domain.assistant.AssistantEngine
 import com.raju.aiassistant.domain.model.UserSettings
+import com.raju.aiassistant.domain.voice.SpeechPipeline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -56,7 +59,11 @@ class AppContainer(context: Context) {
     val providerFactory by lazy { AiProviderFactory(http) }
     val androidTts by lazy { AndroidTts(appContext) }
     val speaker by lazy {
-        TtsManager(appScope, http, AudioPlayer(appContext), androidTts, currentSettings, { secureKeyStore.get(it) }, { online.value })
+        val providers = listOf(
+            SarvamTtsProvider(http, { secureKeyStore.get(it) }, { online.value }, { currentSettings.value.sarvamSpeaker }),
+            AndroidTtsProvider(androidTts) { currentSettings.value.androidVoice },
+        )
+        TtsManager(appScope, SpeechPipeline(AudioPlayer(appContext)), providers, androidTts, currentSettings)
     }
     val voiceInput by lazy { VoiceInputManager(appContext) }
     val deviceTools by lazy { AndroidDeviceTools(appContext) }
