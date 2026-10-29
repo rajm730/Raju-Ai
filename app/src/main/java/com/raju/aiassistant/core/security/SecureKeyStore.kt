@@ -45,8 +45,19 @@ class SecureKeyStore(context: Context) {
         ok && read(id) == trimmed
     }
 
-    /** Decrypts the secret, or returns null if absent or unreadable (e.g. key invalidated). */
-    suspend fun get(id: SecretId): String? = withContext(Dispatchers.IO) { read(id) }
+    /**
+     * Decrypts the secret, or returns null if absent. If a stored value can no longer be decrypted
+     * (Keystore key lost, e.g. after reinstall or data restore), the broken entry is removed so the
+     * app shows "Not set" and the user re-enters the key instead of seeing a key that never works.
+     */
+    suspend fun get(id: SecretId): String? = withContext(Dispatchers.IO) {
+        val value = read(id)
+        if (value == null && prefs.contains(id.storageKey)) {
+            prefs.edit().remove(id.storageKey).commit()
+            _configured.value = readConfiguredIds()
+        }
+        value
+    }
 
     suspend fun remove(id: SecretId): Boolean = withContext(Dispatchers.IO) {
         val ok = prefs.edit().remove(id.storageKey).commit()

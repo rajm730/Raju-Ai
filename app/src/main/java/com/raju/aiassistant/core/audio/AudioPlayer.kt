@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import com.raju.aiassistant.domain.voice.PcmSink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -16,7 +17,7 @@ import kotlin.coroutines.coroutineContext
  * Plays 16-bit PCM through AudioTrack and reports the loudness of what is playing, so the
  * reactor can pulse with the voice. Cancelling the coroutine stops playback immediately.
  */
-class AudioPlayer(context: Context) {
+class AudioPlayer(context: Context) : PcmSink {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANT)
@@ -26,12 +27,15 @@ class AudioPlayer(context: Context) {
         .setAudioAttributes(attributes)
         .build()
 
-    fun requestFocus(): Boolean = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    fun abandonFocus() {
+    override fun requestFocus() {
+        audioManager.requestAudioFocus(focusRequest)
+    }
+
+    override fun abandonFocus() {
         audioManager.abandonAudioFocusRequest(focusRequest)
     }
 
-    suspend fun play(audio: PcmAudio, onLevel: (Float) -> Unit) = withContext(Dispatchers.IO) {
+    override suspend fun play(audio: PcmAudio, onLevel: (Float) -> Unit): Unit = withContext(Dispatchers.IO) {
         val channelMask = if (audio.channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)

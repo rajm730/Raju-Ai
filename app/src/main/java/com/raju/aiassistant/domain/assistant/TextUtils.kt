@@ -4,6 +4,8 @@ private val URL = Regex("""https?://\S+""")
 private val CITATION = Regex("""\[\d+]""")
 private val MARKDOWN = Regex("""[*_`#>|]+""")
 private val BULLET = Regex("""(?m)^\s*[-•]\s+""")
+// Emoji and pictographs (incl. the ✅ ❌ ⚠️ markers used in app notes) are skipped, not read out.
+private val EMOJI = Regex("""[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{FE0F}\x{200D}\x{20E3}]""")
 
 /** Text suitable for TTS: no markdown, links or citation markers. */
 fun speakableText(text: String): String = text
@@ -11,30 +13,36 @@ fun speakableText(text: String): String = text
     .replace(CITATION, "")
     .replace(BULLET, "")
     .replace(MARKDOWN, "")
+    .replace(EMOJI, "")
     .replace(Regex("""[ \t]+"""), " ")
     .replace(Regex("""\n{2,}"""), "\n")
     .trim()
 
-/** Splits long text into chunks of at most [maxChars], preferring sentence boundaries (incl. Hindi "।"). */
-fun chunkForSpeech(text: String, maxChars: Int = 450): List<String> {
+/**
+ * Splits long text into chunks of at most [maxChars], preferring sentence boundaries (incl. Hindi "।").
+ * The first chunk is kept to one short sentence group ([firstMaxChars]) so speech starts quickly.
+ */
+fun chunkForSpeech(text: String, maxChars: Int = 400, firstMaxChars: Int = 160): List<String> {
     val sentences = Regex("""(?<=[.!?।\n])\s+""").split(text).map { it.trim() }.filter { it.isNotEmpty() }
     val chunks = mutableListOf<String>()
     val current = StringBuilder()
+    fun limit() = if (chunks.isEmpty()) firstMaxChars.coerceAtMost(maxChars) else maxChars
+    fun flush() {
+        if (current.isNotEmpty()) { chunks += current.toString(); current.clear() }
+    }
     for (s in sentences) {
         var sentence = s
-        while (sentence.length > maxChars) { // very long sentence: hard split on a space
-            val cut = sentence.lastIndexOf(' ', maxChars).takeIf { it > 0 } ?: maxChars
-            if (current.isNotEmpty()) { chunks += current.toString(); current.clear() }
+        while (sentence.length > limit()) { // very long sentence: hard split on a space
+            flush()
+            val cut = sentence.lastIndexOf(' ', limit()).takeIf { it > 0 } ?: limit()
             chunks += sentence.substring(0, cut).trim()
             sentence = sentence.substring(cut).trim()
         }
-        if (current.length + sentence.length + 1 > maxChars && current.isNotEmpty()) {
-            chunks += current.toString(); current.clear()
-        }
+        if (current.isNotEmpty() && current.length + sentence.length + 1 > limit()) flush()
         if (current.isNotEmpty()) current.append(' ')
         current.append(sentence)
     }
-    if (current.isNotEmpty()) chunks += current.toString()
+    flush()
     return chunks.filter { it.isNotBlank() }
 }
 

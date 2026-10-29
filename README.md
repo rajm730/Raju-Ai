@@ -14,7 +14,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 - **AI chat:** Google Gemini or Groq. Model list comes from your key, with a real connection test and clear errors (invalid key, rate limit, quota, timeout, offline). Requests are retried once on network errors and can be cancelled with Stop.
 - **Voice:**
   - Input: tap-to-talk or continuous conversation (Android speech recognition, Hindi or English-India).
-  - Output: female voice from Sarvam AI Bulbul (cloud), falling back to Android TTS (offline). The reactor shows which engine is active. Stop interrupts immediately, and only one voice plays at a time.
+  - Output: Sarvam AI Bulbul female voice (cloud) first, Android TTS (offline) as fallback — order configurable in Settings. Devanagari is always spoken as Hindi; the next sentence is prepared while the current one plays (no long gaps); the first sentence is short so speech starts quickly. Stop interrupts immediately; only one voice plays at a time. Details and the neural-TTS evaluation (Kokoro, MediaPipe): `docs/VOICE.md`.
 - **Phone tools:**
   - Find contacts and call. Every call is confirmed first; the dialer opens by default, and direct calling is optional.
   - Open installed apps, settings pages and battery status.
@@ -33,7 +33,7 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 Command line: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` · `./gradlew testDebugUnitTest`
 
 ### Ready-made APK from GitHub (no Android Studio needed)
-Every push runs **GitHub Actions → Android CI** (`.github/workflows/android.yml`): `assembleDebug`, `testDebugUnitTest` and `lintDebug` on GitHub's servers.
+Every push and pull request runs **GitHub Actions → Android CI** (`.github/workflows/android.yml`) on GitHub's servers: `assembleDebug`, `testDebugUnitTest` (with a test-count summary in the log) and `lintDebug` (fails the run on lint errors). No secrets are used or printed by CI.
 1. Open https://github.com/rajm730/Raju-Ai/actions → the latest green **Android CI** run.
 2. Under **Artifacts**, download **raju-ai-debug-apk** (zip) → extract `app-debug.apk`.
 3. Copy it to the phone and open it (allow "Install unknown apps" for your file manager once).

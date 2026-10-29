@@ -18,16 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
@@ -35,12 +35,24 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
 
+      - name: Unit test summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, re
+          total = failed = skipped = 0
+          for path in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              m = re.search(r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', open(path).read())
+              if m:
+                  total += int(m[1]); skipped += int(m[2]); failed += int(m[3]) + int(m[4])
+          print(f"UNIT TESTS: total={total} failed={failed} skipped={skipped}")
+          PY
+
       - name: Lint
         run: ./gradlew --no-daemon lintDebug
-        continue-on-error: true
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: raju-ai-debug-apk
           path: app/build/outputs/apk/debug/*.apk
@@ -48,7 +60,7 @@ jobs:
 
       - name: Upload test and lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: reports
           path: |

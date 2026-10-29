@@ -32,6 +32,8 @@ class SarvamTtsClient(
             put("model", model)
             put("pace", pace.coerceIn(0.5f, 2.0f).toDouble())
             put("speech_sample_rate", 22050)
+            // Sarvam normalises numbers and English words inside Hindi/Hinglish text when enabled.
+            put("enable_preprocessing", true)
         }
         val request = Request.Builder()
             .url("$baseUrl/text-to-speech")

@@ -57,7 +57,10 @@ class AndroidTts(private val context: Context) {
     suspend fun synthesize(text: String, languageTag: String, voiceName: String?, rate: Float): Pair<ByteArray?, String?> {
         val engine = engine() ?: return null to "Android text-to-speech is not available. Install Google Speech Services."
         val locale = Locale.forLanguageTag(languageTag)
+        // A voice chosen in Settings is used only for chunks in that voice's language
+        // (e.g. a Hindi voice is not forced onto an English sentence).
         val voice = voiceName?.let { name -> runCatching { engine.voices?.firstOrNull { it.name == name } }.getOrNull() }
+            ?.takeIf { it.locale.language == locale.language }
         if (voice != null) engine.setVoice(voice) else {
             val result = engine.setLanguage(locale)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
