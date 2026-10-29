@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Install-time (normal) permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -72,10 +73,12 @@
             android:exported="false" />
 
         <!-- Incoming-call announcements. Bound by Android only after the user grants the call-screening role. -->
+        <!-- Android 10+ only: the call-screening role (and binding) does not exist on older versions. -->
         <service
             android:name=".notifications.RajuCallScreeningService"
             android:exported="true"
-            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
+            tools:targetApi="29">
             <intent-filter>
                 <action android:name="android.telecom.CallScreeningService" />
             </intent-filter>
