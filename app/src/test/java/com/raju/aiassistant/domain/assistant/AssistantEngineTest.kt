@@ -409,7 +409,8 @@ class AssistantEngineTest {
         e.submit("roz 8 baje class")
         settle()
         assertEquals(listOf("FREQ=DAILY"), tools.eventRules)
-    
+    }
+
     /** Barge-in that fires as soon as Seema starts talking and "records" [utterance]. */
     private class InstantBargeIn(private val utterance: ByteArray? = ByteArray(10)) : BargeIn {
         var starts = 0
