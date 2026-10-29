@@ -1,35 +1,27 @@
 package com.raju.aiassistant.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -74,24 +66,17 @@ data class HudEffects(
 
 val LocalHudEffects = staticCompositionLocalOf { HudEffects() }
 
-/** 0..1 position of a light travelling around a border, or null when border traces are off. */
+/**
+ * Holographic reveal: a light runs once around the panel's border when it appears (0..1), then
+ * the panel is still. One pass instead of an endless loop keeps screens like Settings from
+ * redrawing all the time (battery). Null when border traces are off.
+ */
 @Composable
-fun rememberBorderTrace(periodMillis: Int = 7_000): (() -> Float)? {
+fun rememberBorderTrace(durationMillis: Int = 1_400): (() -> Float)? {
     if (!LocalHudEffects.current.borderTrace) return null
-    val transition = rememberInfiniteTransition(label = "hudTrace")
-    val p by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(periodMillis, easing = LinearEasing)), label = "hudTraceP")
-    // Panels start at different points so the screen doesn't pulse in lockstep.
-    val offset = remember { (System.nanoTime() % 1000) / 1000f }
-    return { (p + offset) % 1f }
-}
-
-/** 0..1 slow pulse for status dots and glows; constant 1 when pulses are off. */
-@Composable
-fun rememberPulse(periodMillis: Int = 1_600): () -> Float {
-    if (!LocalHudEffects.current.pulses) return { 1f }
-    val transition = rememberInfiniteTransition(label = "hudPulse")
-    val p by transition.animateFloat(0.35f, 1f, infiniteRepeatable(tween(periodMillis), RepeatMode.Reverse), label = "hudPulseP")
-    return { p }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { progress.animateTo(1f, tween(durationMillis, easing = LinearEasing)) }
+    return { progress.value }
 }
 
 /**
@@ -109,7 +94,7 @@ fun Modifier.hudFrame(
     drawPath(outline, Brush.verticalGradient(listOf(accent.copy(alpha = fillAlpha), accent.copy(alpha = fillAlpha * 0.25f), Color.Black.copy(alpha = 0.35f))))
     drawPath(outline, accent.copy(alpha = 0.28f), style = Stroke(1.dp.toPx()))
     drawCornerBrackets(accent.copy(alpha = 0.9f), c, (c * 1.8f).coerceAtMost(size.minDimension / 3f), 2.dp.toPx())
-    trace?.let { drawTrace(it(), accent, c) }
+    trace?.invoke()?.takeIf { it < 1f }?.let { drawTrace(it, accent, c) }
 }
 
 private fun cutCornerPath(size: Size, c: Float) = Path().apply {
@@ -166,22 +151,6 @@ private fun DrawScope.drawTrace(progress: Float, accent: Color, inset: Float) {
     }
     drawCircle(Color.White.copy(alpha = 0.85f), 1.8.dp.toPx(), point(head))
 }
-
-/** A soft light band sweeping across text or a panel (draw-phase only, no recomposition). */
-fun Modifier.shimmer(color: Color, time: (() -> Float)?): Modifier =
-    if (time == null) this
-    else graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
-        drawContent()
-        val x = (time() % 1f) * size.width * 2.2f - size.width * 0.6f
-        drawRect(
-            Brush.linearGradient(
-                listOf(Color.Transparent, color.copy(alpha = 0.75f), Color.Transparent),
-                start = Offset(x - size.width * 0.25f, 0f),
-                end = Offset(x + size.width * 0.25f, size.height),
-            ),
-            blendMode = BlendMode.SrcAtop,
-        )
-    }
 
 private const val DECODE_GLYPHS = "01<>/{}[]#*+=ABCDEF"
 

@@ -78,6 +78,8 @@ data class UserSettings(
     val sleepAfterSeconds: Int = 60,
     /** While asleep, wake only when called by name ("Seema …"); off = any speech wakes her. */
     val wakeWord: Boolean = true,
+    /** Morning briefing (journeys, yesterday's spending) and the Sunday expense report as notifications. */
+    val businessReminders: Boolean = true,
     val personality: Personality = Personality.MASTI,
     val announceNotifications: Boolean = false,
     val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),

@@ -11,5 +11,8 @@ class RajuApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         container.consentNotifier.createChannel()
+        com.raju.aiassistant.notifications.BusinessNotifier(this).createChannel()
+        // Morning briefing and weekly report; they check the setting themselves each time.
+        runCatching { com.raju.aiassistant.notifications.BusinessScheduler.schedule(this) }
     }
 }

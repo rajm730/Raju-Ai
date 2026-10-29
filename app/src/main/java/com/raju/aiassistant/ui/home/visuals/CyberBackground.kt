@@ -26,7 +26,7 @@ import kotlin.math.sin
 private val GLYPHS = "0101011001ABCDEF0123456789<>/{}[]=+*#$%&XYZ".toCharArray()
 
 /** The rain and HUD redraw at this rate, independent of the reactor's frame rate. */
-private const val RAIN_FPS = 12f
+private const val RAIN_FPS = 15f
 
 /**
  * Full-screen sci-fi backdrop for the home screen: falling code columns, a faint grid, HUD corner
@@ -60,17 +60,14 @@ fun CyberBackground(
     // The animated layer only redraws when this tick changes (RAIN_FPS times a second),
     // so the reactor can animate smoothly on top without repainting the whole screen.
     val tick by remember(time) { derivedStateOf { (time() * RAIN_FPS).toInt() } }
+    val motes = remember(density) { makeMotes((28 * density).toInt().coerceAtLeast(6)) }
     Canvas(modifier.graphicsLayer()) {
         val t = tick / RAIN_FPS
+        if (density > 0f) drawMotesAndStreams(motes, color, accent, t)
         drawCodeRain(paint, color, t, density, focus)
         drawScanLine(color, t)
         drawHudFrame(color, accent, t)
         drawTelemetry(paint, color, accent, telemetry(), liveClock)
-    }
-    // Floating micro-particles and data streams move at the full frame rate (smooth), but are cheap.
-    if (density > 0f) {
-        val particles = remember(density) { makeMotes((40 * density).toInt().coerceAtLeast(8)) }
-        Canvas(modifier.graphicsLayer()) { drawMotesAndStreams(particles, color, accent, time()) }
     }
 }
 
@@ -97,7 +94,7 @@ private fun DrawScope.drawMotesAndStreams(motes: List<Mote>, color: Color, accen
         val twinkle = 0.5f + 0.5f * sin(t * 1.7f + m.phase)
         val p = Offset(x * size.width, y * size.height)
         val r = (1.2f + 2.2f * m.depth) * density
-        drawCircle((if (m.depth > 0.8f) accent else color).copy(alpha = 0.10f * m.depth * twinkle), r * 3f, p)
+        if (m.depth > 0.75f) drawCircle(accent.copy(alpha = 0.10f * twinkle), r * 3f, p) // halo only on near motes
         drawCircle(color.copy(alpha = (0.25f + 0.45f * twinkle) * m.depth), r, p)
     }
     repeat(3) { i ->

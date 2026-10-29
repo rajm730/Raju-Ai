@@ -8,6 +8,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.raju.aiassistant.domain.business.Journey
+import com.raju.aiassistant.domain.business.Period
+import com.raju.aiassistant.domain.business.formatRupees
+import com.raju.aiassistant.domain.business.normalizeCategory
+import com.raju.aiassistant.domain.business.normalizePnr
+import com.raju.aiassistant.domain.business.rupeesToPaise
+import kotlinx.serialization.json.JsonArray
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeParseException
 import kotlin.math.roundToInt
@@ -76,6 +84,43 @@ sealed interface AssistantAction {
     }
     data class CopyText(val text: String) : AssistantAction {
         override val label get() = "Copy to clipboard"
+    }
+
+    // ---- Business brain: khata, PNR diary, mandi prices
+    data class ExpenseAdd(val amountPaise: Long, val note: String, val category: String) : AssistantAction {
+        override val label get() = "Expense: ${formatRupees(amountPaise)} $note"
+    }
+    data object ExpenseUndo : AssistantAction {
+        override val label get() = "Undo last expense"
+    }
+    data class ExpenseSummary(val period: Period) : AssistantAction {
+        override val label get() = "Expense summary: ${period.english}"
+    }
+    data class JourneySave(val journey: Journey) : AssistantAction {
+        override val label get() = "Save journey: PNR ${journey.pnr}"
+    }
+    data object JourneyList : AssistantAction {
+        override val label get() = "Upcoming journeys"
+    }
+    data class JourneyRemove(val pnr: String) : AssistantAction {
+        override val label get() = "Remove journey: PNR $pnr"
+    }
+    /** Opens the official Indian Railways PNR page (with the PNR copied); the status is never guessed. */
+    data class PnrStatus(val pnr: String) : AssistantAction {
+        override val label get() = "PNR status: $pnr"
+    }
+    data class MandiPrice(val commodity: String, val place: String?) : AssistantAction {
+        override val label get() = "Mandi price: $commodity" + (place?.let { " ($it)" } ?: "")
+    }
+
+    // ---- Advanced tools
+    /** Saves generated text (code, a letter, a list) to a file and opens the share/save sheet. */
+    data class SaveFile(val name: String, val content: String) : AssistantAction {
+        override val label get() = "Save file: $name"
+    }
+    /** Deep research: several web searches, one structured report with sources. */
+    data class Research(val topic: String, val queries: List<String>) : AssistantAction {
+        override val label get() = "Research: $topic"
     }
 }
 
@@ -175,8 +220,59 @@ private fun parseAction(json: String): AssistantAction? {
             AssistantAction.Navigate(d, mode)
         }
         "copy", "copy_text" -> str("text")?.let { AssistantAction.CopyText(it) }
+        "expense_add", "expense", "kharcha" -> {
+            val paise = str("amount")?.let { rupeesToPaise(it) }
+            if (paise == null) null else AssistantAction.ExpenseAdd(paise, str("note") ?: str("category") ?: "kharcha", normalizeCategory(str("category")))
+        }
+        "expense_undo" -> AssistantAction.ExpenseUndo
+        "expense_summary" -> AssistantAction.ExpenseSummary(
+            when (str("period")?.lowercase()) {
+                "yesterday", "kal" -> Period.YESTERDAY
+                "week", "this_week", "hafta" -> Period.WEEK
+                "month", "this_month", "mahina" -> Period.MONTH
+                else -> Period.TODAY
+            },
+        )
+        "pnr_add", "journey_add" -> {
+            val pnr = str("pnr")?.let { normalizePnr(it) }
+            val date = str("date")?.let { parseLocalDate(it) }
+            if (pnr == null || date == null) null
+            else AssistantAction.JourneySave(Journey(pnr = pnr, train = str("train"), date = date, route = str("route"), passenger = str("passenger"), phone = str("phone"), note = str("note")))
+        }
+        "pnr_list", "journey_list" -> AssistantAction.JourneyList
+        "pnr_remove", "journey_remove" -> str("pnr")?.let { normalizePnr(it) }?.let { AssistantAction.JourneyRemove(it) }
+        "pnr_status" -> str("pnr")?.let { normalizePnr(it) }?.let { AssistantAction.PnrStatus(it) }
+        "mandi_price", "mandi" -> str("commodity")?.let { AssistantAction.MandiPrice(it, str("place") ?: str("market") ?: str("state")) }
+        "save_file" -> {
+            val name = str("name")?.let { safeFileName(it) }
+            val content = obj["content"]?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() } // keep indentation
+            if (name == null || content.isNullOrBlank() || content.length > MAX_FILE_CHARS) null else AssistantAction.SaveFile(name, content)
+        }
+        "research" -> {
+            val topic = str("query") ?: str("topic")
+            val queries = (obj["queries"] as? JsonArray)?.mapNotNull { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull()?.trim()?.takeIf { q -> q.isNotEmpty() } }.orEmpty()
+            topic?.let { AssistantAction.Research(it, (queries.ifEmpty { listOf(it) }).distinct().take(3)) }
+        }
         else -> null
     }
+}
+
+const val MAX_FILE_CHARS = 200_000
+
+/** A plain file name: letters, digits, dot, dash and underscore only, with an extension. */
+internal fun safeFileName(value: String): String? {
+    val clean = value.trim().substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._-]"), "_").trim('.', '_').take(60)
+    if (clean.isEmpty()) return null
+    return if ('.' in clean) clean else "$clean.txt"
+}
+
+/** "2026-11-02", "2026-11-02T08:00" or "02-11-2026" → date. */
+internal fun parseLocalDate(value: String): LocalDate? {
+    val v = value.trim()
+    return runCatching { LocalDate.parse(v.take(10)) }.getOrNull()
+        ?: Regex("^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{4})$").find(v)?.let { m ->
+            runCatching { LocalDate.of(m.groupValues[3].toInt(), m.groupValues[2].toInt(), m.groupValues[1].toInt()) }.getOrNull()
+        }
 }
 
 /** Accepts "2026-10-30T17:00", "2026-10-30T17:00:00" or "2026-10-30 17:00" (local time). */

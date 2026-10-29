@@ -67,10 +67,12 @@ fun HudTitle(title: String, accent: Color = MaterialTheme.colorScheme.primary) {
     }
 }
 
-/** Small pulsing dot + label in a cut-corner tag, e.g. "AI: connected". */
+/**
+ * Status dot + label in a cut-corner tag, e.g. "AI: connected". [pulse] (0..1, read while drawing)
+ * makes the dot breathe; pass the screen's own animation clock so no extra frames are drawn.
+ */
 @Composable
-fun StatusChip(label: String, color: Color, modifier: Modifier = Modifier) {
-    val pulse = rememberPulse()
+fun StatusChip(label: String, color: Color, modifier: Modifier = Modifier, pulse: (() -> Float)? = null) {
     Surface(
         modifier = modifier,
         shape = CutCornerShape(topStart = 6.dp, bottomEnd = 6.dp),
@@ -79,7 +81,7 @@ fun StatusChip(label: String, color: Color, modifier: Modifier = Modifier) {
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Canvas(Modifier.size(8.dp)) {
-                val p = pulse()
+                val p = pulse?.invoke() ?: 1f
                 drawCircle(color.copy(alpha = 0.25f * p), radius = size.minDimension / 2f)
                 drawCircle(color.copy(alpha = 0.5f + 0.5f * p), radius = size.minDimension / 3.2f)
             }

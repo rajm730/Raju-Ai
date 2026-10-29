@@ -309,6 +309,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
 
+            Text("Business reminders", style = MaterialTheme.typography.titleMedium)
+            ToggleRow("Morning briefing (~7 AM) and Sunday expense report as notifications", s.businessReminders, viewModel::setBusinessReminders)
+            Text(
+                "Made from your own khata and PNR diary on this phone (no AI call, nothing is uploaded). Shown only when there is something to tell; tap it and Seema explains. Android may deliver it a few minutes late to save battery.",
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
+
             Text("Personality", style = MaterialTheme.typography.titleMedium)
             Personality.entries.forEach { p -> HintRadioRow(p.label, p.hint, s.personality == p) { viewModel.setPersonality(p) } }
         }

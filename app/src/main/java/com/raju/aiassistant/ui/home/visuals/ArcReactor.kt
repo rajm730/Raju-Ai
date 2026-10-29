@@ -310,17 +310,24 @@ private fun DrawScope.drawDashedRing(c: Offset, radius: Float, thickness: Float,
     )
 }
 
-/** Notched bezel: twelve bright notches, fine graduations and four longer index marks. */
+/** Notched bezel: fine graduations (one dashed stroke), twelve bright index marks and four brackets. */
 private fun DrawScope.drawTechMarkings(c: Offset, radius: Float, r: Float, color: Color, accent: Color, flicker: Float) {
-    repeat(60) { i ->
-        val a = 2.0 * PI * i / 60
-        val major = i % 5 == 0
-        val len = r * if (major) 0.03f else 0.014f
+    val circumference = (2.0 * PI * radius).toFloat()
+    val dash = r * 0.004f
+    drawCircle(
+        color = color.copy(alpha = 0.35f * flicker),
+        radius = radius - r * 0.007f,
+        center = c,
+        style = Stroke(width = r * 0.014f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, circumference / 60f - dash))),
+    )
+    repeat(12) { i ->
+        val a = 2.0 * PI * i / 12
+        val len = r * 0.03f
         drawLine(
-            color = (if (major) accent else color).copy(alpha = (if (major) 0.8f else 0.35f) * flicker),
+            color = accent.copy(alpha = 0.8f * flicker),
             start = Offset(c.x + radius * cos(a).toFloat(), c.y + radius * sin(a).toFloat()),
             end = Offset(c.x + (radius - len) * cos(a).toFloat(), c.y + (radius - len) * sin(a).toFloat()),
-            strokeWidth = r * if (major) 0.008f else 0.004f,
+            strokeWidth = r * 0.008f,
         )
     }
     repeat(4) { i -> drawArcAround(c, radius + r * 0.012f, i * 90f - 6f, 12f, accent.copy(alpha = 0.9f * flicker), r * 0.01f) }

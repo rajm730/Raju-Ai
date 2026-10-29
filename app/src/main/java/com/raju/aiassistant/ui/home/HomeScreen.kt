@@ -72,10 +72,8 @@ import com.raju.aiassistant.ui.theme.ErrorRed
 import com.raju.aiassistant.ui.theme.EmeraldBright
 import com.raju.aiassistant.ui.theme.HoloCyan
 import com.raju.aiassistant.ui.components.DecodingText
-import com.raju.aiassistant.ui.components.LocalHudEffects
 import com.raju.aiassistant.ui.components.VoiceWaveform
 import com.raju.aiassistant.ui.components.hudFrame
-import com.raju.aiassistant.ui.components.shimmer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.ui.graphics.Brush
@@ -151,7 +149,7 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            HoloTitle("SEEMA AI", Color(style.primaryArgb), if (running && LocalHudEffects.current.pulses) timeProvider else null)
+            HoloTitle("SEEMA AI", Color(style.primaryArgb))
 
             if (state.paused) {
                 // Paused is easy to forget: show it clearly, with a one-tap way back.
@@ -191,7 +189,8 @@ fun HomeScreen(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                StatusChip(assistantState.label, Color(style.primaryArgb))
+                // The state tag breathes with the reactor's own (frame-capped) clock.
+                StatusChip(assistantState.label, Color(style.primaryArgb), pulse = if (running) ({ 0.65f + 0.35f * sin(timeProvider() * 3f) }) else null)
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
                 StatusChip(
                     when {
@@ -329,12 +328,11 @@ private fun ControlButton(
     }
 }
 
-/** The "SEEMA AI" wordmark: wide-spaced holographic letters with a soft glow and a slow light sweep. */
+/** The "SEEMA AI" wordmark: wide-spaced holographic letters with a soft glow. */
 @Composable
-private fun HoloTitle(text: String, color: Color, time: (() -> Float)?) {
+private fun HoloTitle(text: String, color: Color) {
     Text(
         text,
-        modifier = Modifier.shimmer(Color.White, time?.let { t -> { t() * 0.18f } }),
         style = MaterialTheme.typography.headlineMedium.copy(
             letterSpacing = 8.sp,
             fontWeight = FontWeight.Bold,
