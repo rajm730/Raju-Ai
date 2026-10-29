@@ -411,11 +411,11 @@ class AssistantEngineTest {
         assertEquals(listOf("FREQ=DAILY"), tools.eventRules)
     }
 
-    /** Barge-in that fires as soon as Seema starts talking and "records" [utterance]. */
+    /** The user talks over Seema's first reply (only that one) and "records" [utterance]. */
     private class InstantBargeIn(private val utterance: ByteArray? = ByteArray(10)) : BargeIn {
         var starts = 0
         override fun start(capture: Boolean, onInterrupt: () -> Unit, onUtterance: (ByteArray?) -> Unit) {
-            starts++
+            if (starts++ > 0) return
             onInterrupt()
             if (capture) onUtterance(utterance)
         }
