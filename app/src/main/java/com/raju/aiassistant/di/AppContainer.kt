@@ -104,7 +104,7 @@ class AppContainer(context: Context) {
             apiKey = { secureKeyStore.get(SecretId.DEEPGRAM_API_KEY) },
             model = { VoiceCatalog.sttOption(currentSettings.value.deepgramSttModel) },
             configured = { SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value && online.value },
-            keyterms = ::keyterms,
+            keyterms = { keyterms() },
         )
     }
 
