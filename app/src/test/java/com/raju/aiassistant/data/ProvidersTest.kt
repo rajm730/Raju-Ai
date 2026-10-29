@@ -239,4 +239,15 @@ class ProvidersTest {
         assertTrue(listen.path!!.contains("/v1/listen?model=nova-3&language=multi"))
         assertEquals("audio/wav", listen.getHeader("Content-Type"))
     }
+
+    @Test
+    fun deepgramBoostsKeytermsAndRetriesWithoutThemIfRejected() = runBlocking {
+        enqueue(400, """{"err_msg":"bad keyterm"}""")
+        enqueue(200, """{"results":{"channels":[{"alternatives":[{"transcript":"Riyashree ko call karo","confidence":0.41}]}]}}""")
+        val r = DeepgramClient(http, "dg", url).transcribeDetailed(wavBytes, "nova-3", "multi", listOf("Seema", "Riyashree")) as AiResult.Success
+        assertEquals("Riyashree ko call karo", r.value.text)
+        assertEquals(0.41, r.value.confidence, 0.001)
+        assertTrue(server.takeRequest().path!!.contains("keyterm=Seema&keyterm=Riyashree"))
+        assertTrue(!server.takeRequest().path!!.contains("keyterm"))
+    }
 }

@@ -7,16 +7,41 @@ private val BULLET = Regex("""(?m)^\s*[-•]\s+""")
 // Emoji and pictographs (incl. the ✅ ❌ ⚠️ markers used in app notes) are skipped, not read out.
 private val EMOJI = Regex("""[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{FE0F}\x{200D}\x{20E3}]""")
 
-/** Text suitable for TTS: no markdown, links or citation markers. */
-fun speakableText(text: String): String = text
-    .replace(URL, "")
-    .replace(CITATION, "")
-    .replace(BULLET, "")
-    .replace(MARKDOWN, "")
+/** Text suitable for TTS: no markdown, links or citation markers; symbols spoken as words. */
+fun speakableText(text: String): String = spokenSymbols(
+    text
+        .replace(URL, "")
+        .replace(CITATION, "")
+        .replace(BULLET, "")
+        .replace(MARKDOWN, ""),
+)
     .replace(EMOJI, "")
     .replace(Regex("""[ \t]+"""), " ")
     .replace(Regex("""\n{2,}"""), "\n")
     .trim()
+
+private val HINDI_SCRIPT = Regex("[\\u0900-\\u097F]")
+private val RUPEES = Regex("""(?:₹|\bRs\.?|\bINR)\s*(\d+(?:,\d+)*(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+private val PERCENT = Regex("""(\d+(?:\.\d+)?)\s*%""")
+private val CELSIUS = Regex("""(\d+(?:\.\d+)?)\s*°\s*C\b""")
+private val KM = Regex("""(\d+(?:\.\d+)?)\s*km\b""", RegexOption.IGNORE_CASE)
+
+/**
+ * Voices skip or mispronounce symbols ("₹500", "30%", "25°C", "&"), so they are written as words —
+ * in Hindi when the text is Hindi, otherwise in English. Brackets become pauses.
+ */
+fun spokenSymbols(text: String): String {
+    val hi = HINDI_SCRIPT.containsMatchIn(text)
+    return text
+        .replace(RUPEES) { "${it.groupValues[1].replace(",", "")} " + if (hi) "रुपये" else "rupees" }
+        .replace(PERCENT) { "${it.groupValues[1]} " + if (hi) "प्रतिशत" else "percent" }
+        .replace(CELSIUS) { "${it.groupValues[1]} " + if (hi) "डिग्री" else "degrees" }
+        .replace(KM) { "${it.groupValues[1]} " + if (hi) "किलोमीटर" else "kilometres" }
+        .replace(" & ", if (hi) " और " else " and ")
+        .replace(Regex("""\s*[()\[\]{}]\s*"""), ", ")
+        .replace(Regex(""",\s*([,.!?।])"""), "$1")
+        .replace(Regex("""\s*,\s*$"""), "")
+}
 
 /**
  * Splits long text into chunks of at most [maxChars], preferring sentence boundaries (incl. Hindi "।").

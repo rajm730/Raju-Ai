@@ -12,7 +12,9 @@ enum class AssistantState(val label: String) {
     Executing("Executing"),
     Success("Done"),
     Error("Error"),
-    Offline("Offline");
+    Offline("Offline"),
+    /** Hands-free mode after a quiet while: the mic only waits (on the phone) for the user's voice. */
+    Sleeping("Sleeping");
 
     /** States in which a Stop action is meaningful. */
     val isBusy: Boolean

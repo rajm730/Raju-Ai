@@ -348,7 +348,7 @@ class AssistantEngineTest {
         val e = engine(AiResult.Success("""Dekhti hoon. <action>{"type":"battery"}</action>"""))
         e.submit("battery kitni hai")
         settle()
-        assertEquals(listOf("Dekhti hoon.", "Battery 80%"), speaker.spoken)
+        assertEquals(listOf("Dekhti hoon.", "Battery 80 percent"), speaker.spoken) // "%" is spoken as a word
     }
 
     @Test
@@ -521,5 +521,110 @@ class AssistantEngineTest {
         e.startHandsFree()
         e.stop()
         assertTrue(!mode.active)
+    }
+
+    private class FakeWake : WakeListener {
+        var onUtterance: ((ByteArray) -> Unit)? = null
+        var starts = 0
+        var stops = 0
+        override fun start(onUtterance: (ByteArray) -> Unit, onError: () -> Unit) { starts++; this.onUtterance = onUtterance }
+        override fun stop() { stops++; onUtterance = null }
+    }
+
+    private var now = 0L
+
+    private fun TestScope.sleepyEngine(wake: WakeListener, transcriber: Transcriber?, vararg replies: AiResult<String>): AssistantEngine {
+        provider = FakeProvider(ArrayDeque(replies.toList()))
+        return AssistantEngine(
+            scope = backgroundScope, settings = settings, secret = { keys[it] },
+            providerFor = { _, _ -> provider }, searchFor = { search },
+            history = store, memories = store, actionLog = store, tools = tools,
+            speaker = speaker, voice = voice, isOnline = { online }, clock = { now }, nowDescription = { "now" },
+            transcriber = transcriber, wakeListener = wake,
+        )
+    }
+
+    @Test
+    fun quietForAMinuteSheSleepsAndHerNameWakesHer() = runTest {
+        val wake = FakeWake()
+        val e = sleepyEngine(wake, FakeTranscriber("Seema, time kya hua?"), AiResult.Success("Saade paanch baje hain."))
+        e.startHandsFree()
+        now = 30_000
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        runCurrent()
+        assertEquals(AssistantState.Listening, e.state.value) // not yet
+        now = 61_000
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        runCurrent()
+        assertEquals(AssistantState.Sleeping, e.state.value)
+        assertEquals(1, wake.starts)
+        wake.onUtterance!!(ByteArray(10))
+        settle()
+        assertTrue(e.transcript.value.any { it.role == ChatRole.USER && it.text == "time kya hua?" })
+        assertEquals("Saade paanch baje hain.", speaker.spoken.last())
+    }
+
+    @Test
+    fun otherTalkDoesNotWakeHer() = runTest {
+        val wake = FakeWake()
+        val e = sleepyEngine(wake, FakeTranscriber("TV pe news chal rahi hai"))
+        e.startHandsFree()
+        now = 61_000
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        runCurrent()
+        wake.onUtterance!!(ByteArray(10))
+        settle()
+        assertEquals(AssistantState.Sleeping, e.state.value)
+        assertEquals(2, wake.starts) // listening for her name again
+        assertTrue(e.transcript.value.isEmpty())
+    }
+
+    @Test
+    fun justHerNameGetsAGreetingAndOpeningTheAppWakesHer() = runTest {
+        val wake = FakeWake()
+        val e = sleepyEngine(wake, FakeTranscriber("सीमा"))
+        e.startHandsFree()
+        now = 61_000
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        runCurrent()
+        wake.onUtterance!!(ByteArray(10))
+        settle()
+        assertEquals("हाँ जी, बोलिए?", speaker.spoken.last())
+        assertEquals(AssistantState.Listening, e.state.value)
+
+        now = 200_000
+        voice.onError!!(VoiceError("silence", noSpeech = true))
+        runCurrent()
+        assertEquals(AssistantState.Sleeping, e.state.value)
+        e.suspendListening()
+        e.startHandsFree() // app opened again
+        assertEquals(AssistantState.Listening, e.state.value)
+        assertTrue(wake.stops >= 2)
+    }
+
+    @Test
+    fun aPauseAfterAurWaitsForTheRestOfTheSentence() = runTest {
+        val e = engine(AiResult.Success("Theek hai."))
+        e.startHandsFree()
+        voice.onResult!!("mummy ko call karo aur")
+        runCurrent()
+        assertEquals(0, provider.calls.size)
+        voice.onResult!!("unhe bolo main late aaunga")
+        settle()
+        assertEquals("mummy ko call karo aur unhe bolo main late aaunga", e.transcript.value.first { it.role == ChatRole.USER }.text)
+        assertEquals(1, provider.calls.size)
+    }
+
+    @Test
+    fun anUnclearWordIsAskedAgainOnce() = runTest {
+        val e = engine()
+        e.startHandsFree()
+        voice.onError!!(VoiceError("unclear", unclear = true))
+        settle()
+        assertTrue(speaker.spoken.last().contains("एक बार फिर"))
+        assertEquals(AssistantState.Listening, e.state.value)
+        voice.onError!!(VoiceError("unclear", unclear = true))
+        settle()
+        assertEquals(1, speaker.spoken.size) // asked only once
     }
 }

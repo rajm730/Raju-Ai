@@ -157,6 +157,23 @@ fun HomeScreen(
                 }
             }
 
+            if (state.safetyMode) {
+                // Safety Mode silently blocks calls, WhatsApp, SMS, apps and music: say so where the user looks.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "🛡️ Safety Mode on — calls, WhatsApp, SMS, apps & music are blocked",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = WarningAmber,
+                    )
+                    FilledTonalButton(onClick = viewModel::disableSafetyMode) { Text("Turn off") }
+                }
+            }
+
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -166,6 +183,7 @@ fun HomeScreen(
                 StatusChip(
                     when {
                         state.listening -> "Mic: listening"
+                        assistantState == AssistantState.Sleeping -> "Mic: sleep — say \"Seema\""
                         state.handsFree -> "Mic: hands-free"
                         else -> "Mic: off"
                     },
@@ -189,9 +207,9 @@ fun HomeScreen(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        enabled = assistantState == AssistantState.Speaking,
-                        onClickLabel = "Stop talking",
-                    ) { viewModel.interrupt() }
+                        enabled = state.previewState == null && (assistantState == AssistantState.Speaking || assistantState == AssistantState.Sleeping),
+                        onClickLabel = if (assistantState == AssistantState.Sleeping) "Wake up" else "Stop talking",
+                    ) { viewModel.tapReactor() }
                     .semantics { contentDescription = "Assistant status: ${assistantState.label}" },
                 contentAlignment = Alignment.Center,
             ) {

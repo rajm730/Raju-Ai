@@ -297,6 +297,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = RajuViewMo
             )
             ToggleRow("Continuous conversation (keeps listening after each reply while the app is open)", s.continuousConversation, viewModel::setContinuous)
 
+            Text("Sleep mode (hands-free)", style = MaterialTheme.typography.titleMedium)
+            ChipRow(SLEEP_OPTIONS.map { it.first.toString() }, s.sleepAfterSeconds.toString(), { v -> SLEEP_OPTIONS.first { it.first.toString() == v }.second }) {
+                viewModel.setSleepAfterSeconds(it.toInt())
+            }
+            ToggleRow("Wake only when called by name (\"Seema…\")", s.wakeWord, viewModel::setWakeWord)
+            Text(
+                "After this long without you talking, Seema goes to sleep: the recogniser stops (no beeps, no data used) and a light detector on the phone waits for a voice. " +
+                    "Say \"Seema\" (or \"Seema, kal ka mausam batao\") and she wakes at once; tapping the reactor wakes her too. " +
+                    "Recognising her name needs a Deepgram key; without it any voice wakes her. Opening the app always finds her awake.",
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
+
             Text("Personality", style = MaterialTheme.typography.titleMedium)
             Personality.entries.forEach { p -> HintRadioRow(p.label, p.hint, s.personality == p) { viewModel.setPersonality(p) } }
         }
@@ -496,6 +508,9 @@ private fun VoicePicker(voices: List<com.raju.aiassistant.data.tts.VoiceOption>,
         }
     }
 }
+
+/** Sleep-mode timer choices: seconds → label. */
+private val SLEEP_OPTIONS = listOf(30 to "30 sec", 60 to "1 min", 120 to "2 min", 300 to "5 min", 0 to "Never")
 
 @Composable
 internal fun ChipRow(options: List<String>, selected: String, label: (String) -> String, onSelect: (String) -> Unit) {

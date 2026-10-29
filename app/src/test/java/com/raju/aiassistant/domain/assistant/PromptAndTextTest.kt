@@ -77,4 +77,20 @@ class PromptAndTextTest {
         assertTrue(looksSensitive("मेरा पिन 1234"))
         assertFalse(looksSensitive("My favourite colour is blue"))
     }
+
+    @Test
+    fun promptKeepsStablePartFirstAndAddsTurnContext() {
+        val p = buildSystemPrompt(emptyList(), "Monday 9 AM", context = PromptContext(voiceTurn = true, recentOpenings = listOf("Arre waah"), partOfDay = "morning"))
+        assertTrue(p.indexOf("PHONE TOOLS") < p.indexOf("Monday 9 AM"))
+        assertTrue(p.contains("Arre waah") && p.contains("morning"))
+        assertEquals("Arre waah ji", openingOf("Arre waah ji, kya baat hai!"))
+        assertEquals("morning", partOfDay(9))
+    }
+
+    @Test
+    fun symbolsAreSpokenAsWords() {
+        assertEquals("Price 500 rupees, 20 percent off", spokenSymbols("Price ₹500, 20% off"))
+        assertEquals("आज 32 डिग्री है", spokenSymbols("आज 32°C है"))
+        assertEquals("Tea and coffee, hot, ready", spokenSymbols("Tea & coffee (hot) ready"))
+    }
 }
