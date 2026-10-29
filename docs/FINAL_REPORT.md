@@ -32,7 +32,17 @@ Legend: ✅ implemented and unit-tested on JVM · 🟡 implemented, not yet test
 | Backend server | ⛔ | Per your instruction; keys are stored on the device |
 | 3D hologram | ⛔ | Removed at your request; reactor only |
 
-## Real Android build (GitHub Actions)
+## Voice update (latest)
+- Run https://github.com/rajm730/Raju-Ai/actions/runs/40830350266 on commit `fd1d1ce`:
+  - `assembleDebug` — BUILD SUCCESSFUL
+  - `testDebugUnitTest` — BUILD SUCCESSFUL, log summary `UNIT TESTS: total=72 failed=0 skipped=0`
+  - `lintDebug` — BUILD SUCCESSFUL (lint now fails the run on errors)
+  - Debug APK artifact `raju-ai-debug-apk` (17.9 MB zip)
+- New: modular TTS pipeline (`domain/voice`), prefetch, short first chunk, per-script language,
+  Sarvam preprocessing, Keystore self-heal. Neural TTS / local LLM evaluation: `docs/VOICE.md`.
+- Still pending on a real phone: listening test for naturalness/pronunciation, mic and all phone actions.
+
+## Real Android build (GitHub Actions) — first run
 - Run https://github.com/rajm730/Raju-Ai/actions/runs/40810376027 on commit `b69dfda`, ubuntu-24.04, JDK 17, Gradle 8.11.1:
   - `./gradlew assembleDebug` — **BUILD SUCCESSFUL** (3m 44s; KSP/Room, Kotlin, resources, dex, packaging)
   - `./gradlew testDebugUnitTest` — **BUILD SUCCESSFUL** (all 61 unit tests in `app/src/test`)
