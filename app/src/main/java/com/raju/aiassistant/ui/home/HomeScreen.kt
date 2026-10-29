@@ -1,7 +1,11 @@
 package com.raju.aiassistant.ui.home
 
+import android.Manifest
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Mic
@@ -37,16 +40,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -85,13 +89,21 @@ fun HomeScreen(
     val time = rememberAnimationTime(running, profile.maxFps)
     val timeProvider = { time.floatValue }
 
-    // Real speech level arrives from TTS in Phase 4. In "Speaking" preview we animate a
-    // synthetic level purely so the speech-reactive visuals can be checked.
+    // Real speech level comes from the audio being played. In the "Speaking" preview a synthetic
+    // level is animated purely so the speech-reactive visuals can be checked.
+    val realLevel = viewModel.speechLevel
     val speechLevel = {
         if (state.previewState == AssistantState.Speaking) {
             val t = time.floatValue
             abs(sin(t * 9f) * (0.6f + 0.4f * sin(t * 2.3f)))
-        } else 0f
+        } else realLevel.value
+    }
+
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startVoice()
+    }
+    val onVoice = {
+        if (viewModel.hasMicPermission()) viewModel.startVoice() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     var showPreview by rememberSaveable { mutableStateOf(false) }
@@ -104,7 +116,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("RAJU AI", style = MaterialTheme.typography.headlineMedium, color = ReactorCyan)
 
@@ -114,12 +126,15 @@ fun HomeScreen(
             ) {
                 StatusChip(assistantState.label, Color(style.primaryArgb))
                 StatusChip(if (state.online) "Online" else "Offline", if (state.online) SuccessGreen else ErrorRed)
-                StatusChip("Mic: off", TextSecondary)
-                StatusChip(
-                    label = if (state.providerKeySaved) "${state.defaultProvider.shortName}: key saved"
-                    else "${state.defaultProvider.shortName}: no key",
-                    color = if (state.providerKeySaved) SuccessGreen else WarningAmber,
-                )
+                StatusChip(if (state.listening) "Mic: listening" else "Mic: off", if (state.listening) SuccessGreen else TextSecondary)
+                val provider = state.defaultProvider.shortName
+                when {
+                    state.providerConnected && state.providerKeySaved -> StatusChip("$provider: connected", SuccessGreen)
+                    state.providerKeySaved -> StatusChip("$provider: key saved", WarningAmber)
+                    else -> StatusChip("$provider: no key", ErrorRed)
+                }
+                if (state.safetyMode) StatusChip("Safety Mode", WarningAmber)
+                if (state.paused) StatusChip("Paused", WarningAmber)
             }
 
             // Stage: one large, centred, heart-beating reactor
@@ -142,11 +157,20 @@ fun HomeScreen(
                 color = Color(style.primaryArgb),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
+            val caption = when {
+                state.previewState != null -> "Visual preview only — nothing is running."
+                state.listening && state.partialTranscript.isNotBlank() -> "“${state.partialTranscript}”"
+                assistantState == AssistantState.Idle && state.lastReply != null -> state.lastReply!!
+                assistantState == AssistantState.Idle && !state.providerKeySaved -> "Add your ${state.defaultProvider.shortName} API key in Settings to start."
+                else -> statusHintFor(assistantState)
+            }
             Text(
-                if (state.previewState != null) "Visual preview only — nothing is running." else statusHintFor(assistantState),
+                caption,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
 
             if (showPreview) {
@@ -165,10 +189,11 @@ fun HomeScreen(
                 if (!showPreview) viewModel.setPreview(null)
             }) { Text(if (showPreview) "Hide visual preview" else "Preview visual states") }
 
+            val busy = assistantState.isBusy || state.listening
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ControlButton("Voice", Icons.Filled.Mic, enabled = false, onClick = {}, modifier = Modifier.weight(1f))
+                ControlButton("Voice", Icons.Filled.Mic, enabled = !state.listening, onClick = onVoice, modifier = Modifier.weight(1f))
                 ControlButton("Chat", Icons.AutoMirrored.Filled.Chat, enabled = true, onClick = onOpenChat, modifier = Modifier.weight(1f))
-                ControlButton("Stop", Icons.Filled.Stop, enabled = assistantState.isBusy, onClick = viewModel::stop, modifier = Modifier.weight(1f))
+                ControlButton("Stop", Icons.Filled.Stop, enabled = busy || state.previewState != null, onClick = viewModel::stop, modifier = Modifier.weight(1f))
                 ControlButton("Settings", Icons.Filled.Settings, enabled = true, onClick = onOpenSettings, modifier = Modifier.weight(1f))
             }
         }

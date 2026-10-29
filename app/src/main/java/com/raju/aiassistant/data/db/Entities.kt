@@ -33,3 +33,20 @@ data class MessageEntity(
     val text: String,
     val createdAt: Long,
 )
+
+@Entity(tableName = "memories")
+data class MemoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val text: String,
+    val createdAt: Long,
+)
+
+@Entity(tableName = "action_log")
+data class ActionLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val type: String,
+    val summary: String,
+    /** [com.raju.aiassistant.domain.assistant.ActionStatus.name] */
+    val status: String,
+    val createdAt: Long,
+)

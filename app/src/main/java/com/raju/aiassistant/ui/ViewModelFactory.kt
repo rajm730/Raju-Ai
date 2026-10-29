@@ -9,22 +9,15 @@ import com.raju.aiassistant.di.AppContainer
 import com.raju.aiassistant.ui.chat.ChatViewModel
 import com.raju.aiassistant.ui.home.HomeViewModel
 import com.raju.aiassistant.ui.settings.SettingsViewModel
+import com.raju.aiassistant.ui.tools.ToolsViewModel
 
 private fun CreationExtras.container(): AppContainer =
     (this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as RajuApp).container
 
 /** Single factory that wires every ViewModel from the [AppContainer]. */
 val RajuViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
-    initializer {
-        val c = container()
-        HomeViewModel(c.secureKeyStore, c.settingsRepository, c.connectivityObserver.isOnline)
-    }
-    initializer {
-        val c = container()
-        ChatViewModel(c.conversationRepository, c.settingsRepository)
-    }
-    initializer {
-        val c = container()
-        SettingsViewModel(c.secureKeyStore, c.settingsRepository, c.conversationRepository)
-    }
+    initializer { HomeViewModel(container()) }
+    initializer { ChatViewModel(container()) }
+    initializer { SettingsViewModel(container()) }
+    initializer { ToolsViewModel(container()) }
 }

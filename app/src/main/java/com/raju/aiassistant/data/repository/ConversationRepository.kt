@@ -3,34 +3,41 @@ package com.raju.aiassistant.data.repository
 import com.raju.aiassistant.data.db.ChatDao
 import com.raju.aiassistant.data.db.ConversationEntity
 import com.raju.aiassistant.data.db.MessageEntity
+import com.raju.aiassistant.domain.assistant.ChatHistory
 import com.raju.aiassistant.domain.model.ChatMessage
 import com.raju.aiassistant.domain.model.ChatRole
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class ConversationRepository(
     private val dao: ChatDao,
     private val clock: () -> Long = System::currentTimeMillis,
-) {
-    /** Returns the most recent conversation, creating one if none exists yet. */
-    suspend fun currentConversationId(): Long =
-        dao.latestConversation()?.id ?: dao.insertConversation(
-            ConversationEntity(title = "New chat", createdAt = clock(), updatedAt = clock())
-        )
+) : ChatHistory {
+    private val lock = Mutex()
+    private var conversationId: Long? = null
 
-    fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> =
-        dao.observeMessages(conversationId).map { rows -> rows.map { it.toDomain() } }
-
-    suspend fun addMessage(conversationId: Long, role: ChatRole, text: String): Long {
-        val now = clock()
-        val id = dao.insertMessage(
-            MessageEntity(conversationId = conversationId, role = role.name, text = text, createdAt = now)
-        )
-        dao.touchConversation(conversationId, now)
-        return id
+    private suspend fun currentConversationId(): Long = lock.withLock {
+        conversationId ?: (dao.latestConversation()?.id ?: dao.insertConversation(
+            ConversationEntity(title = "Chat", createdAt = clock(), updatedAt = clock())
+        )).also { conversationId = it }
     }
 
-    suspend fun clearAll() = dao.deleteAllConversations()
+    override suspend fun recent(limit: Int): List<ChatMessage> = dao.recentMessages(limit).map { it.toDomain() }
+
+    override suspend fun add(role: ChatRole, text: String): Long {
+        val id = currentConversationId()
+        val now = clock()
+        val rowId = dao.insertMessage(MessageEntity(conversationId = id, role = role.name, text = text, createdAt = now))
+        dao.touchConversation(id, now)
+        return rowId
+    }
+
+    override suspend fun clear() {
+        lock.withLock {
+            dao.deleteAllConversations()
+            conversationId = null
+        }
+    }
 
     private fun MessageEntity.toDomain() = ChatMessage(
         id = id,

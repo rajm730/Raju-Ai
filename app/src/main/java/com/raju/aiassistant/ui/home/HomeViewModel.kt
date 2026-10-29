@@ -2,12 +2,10 @@ package com.raju.aiassistant.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.raju.aiassistant.core.security.SecureKeyStore
-import com.raju.aiassistant.data.prefs.SettingsRepository
+import com.raju.aiassistant.di.AppContainer
 import com.raju.aiassistant.domain.ai.ProviderId
 import com.raju.aiassistant.domain.model.AssistantState
-import com.raju.aiassistant.domain.model.SecretId
-import kotlinx.coroutines.flow.Flow
+import com.raju.aiassistant.domain.model.ChatRole
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,46 +17,64 @@ data class HomeUiState(
     /** Non-null while the user is previewing a state's visuals (no real work is happening). */
     val previewState: AssistantState? = null,
     val online: Boolean = true,
+    val listening: Boolean = false,
+    val partialTranscript: String = "",
+    val lastReply: String? = null,
     val defaultProvider: ProviderId = ProviderId.GEMINI,
-    /** True only when an API key for the default provider has been saved. Not a connection test. */
     val providerKeySaved: Boolean = false,
+    /** True only if the last real connection test for the default provider succeeded. */
+    val providerConnected: Boolean = false,
     val lowPowerMode: Boolean = false,
     val reducedMotion: Boolean = false,
+    val paused: Boolean = false,
+    val safetyMode: Boolean = false,
 )
 
-class HomeViewModel(
-    keyStore: SecureKeyStore,
-    settingsRepository: SettingsRepository,
-    isOnline: Flow<Boolean>,
-) : ViewModel() {
+private data class EngineView(val state: AssistantState, val listening: Boolean, val partial: String, val lastReply: String?)
 
+class HomeViewModel(private val c: AppContainer) : ViewModel() {
+    private val engine = c.engine
     private val preview = MutableStateFlow<AssistantState?>(null)
 
+    val speechLevel: StateFlow<Float> = engine.speechLevel
+
+    private val engineView = combine(engine.state, engine.listening, engine.partialTranscript, engine.transcript) { s, l, p, t ->
+        EngineView(s, l, p, t.lastOrNull { it.role == ChatRole.ASSISTANT }?.text)
+    }
+
     val uiState: StateFlow<HomeUiState> =
-        combine(keyStore.configured, settingsRepository.settings, isOnline, preview) { configured, settings, online, previewState ->
+        combine(engineView, c.secureKeyStore.configured, c.currentSettings, c.online, preview) { ev, configured, settings, online, previewState ->
+            val real = if (!online && ev.state == AssistantState.Idle) AssistantState.Offline else ev.state
             HomeUiState(
-                assistantState = previewState ?: if (online) AssistantState.Idle else AssistantState.Offline,
+                assistantState = previewState ?: real,
                 previewState = previewState,
                 online = online,
+                listening = ev.listening,
+                partialTranscript = ev.partial,
+                lastReply = ev.lastReply,
                 defaultProvider = settings.defaultProvider,
-                providerKeySaved = secretFor(settings.defaultProvider) in configured,
+                providerKeySaved = settings.defaultProvider.secret in configured,
+                providerConnected = settings.lastTests[settings.defaultProvider]?.success == true,
                 lowPowerMode = settings.lowPowerMode,
                 reducedMotion = settings.reducedMotion,
+                paused = settings.assistantPaused,
+                safetyMode = settings.safetyMode,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    fun hasMicPermission() = c.voiceInput.hasPermission()
+    fun startVoice() {
+        preview.value = null
+        engine.startVoice()
+    }
+
+    fun stop() {
+        preview.value = null
+        engine.stop()
+    }
 
     /** Shows a state's visuals for testing the UI. Pass null to return to the real state. */
     fun setPreview(state: AssistantState?) {
         preview.value = state
-    }
-
-    /** Stop: ends whatever the assistant is doing. Until Phase 3/4 that is only a visual preview. */
-    fun stop() {
-        preview.value = null
-    }
-
-    private fun secretFor(provider: ProviderId): SecretId = when (provider) {
-        ProviderId.GEMINI -> SecretId.GEMINI_API_KEY
-        ProviderId.GROK -> SecretId.GROK_API_KEY
     }
 }
