@@ -74,6 +74,10 @@ data class UserSettings(
     val autoListen: Boolean = true,
     /** Talking while Seema speaks stops her (voice conversations only). */
     val bargeIn: Boolean = true,
+    /** Hands-free: after this many seconds without the user speaking Seema goes to sleep (0 = never). */
+    val sleepAfterSeconds: Int = 60,
+    /** While asleep, wake only when called by name ("Seema …"); off = any speech wakes her. */
+    val wakeWord: Boolean = true,
     val personality: Personality = Personality.MASTI,
     val announceNotifications: Boolean = false,
     val announceApps: Set<String> = setOf(AnnounceApp.WHATSAPP.packageName, AnnounceApp.WHATSAPP_BUSINESS.packageName),

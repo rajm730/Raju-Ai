@@ -80,11 +80,22 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     /** Mic button: turns hands-free listening on, or off when it is already on. */
     fun toggleHandsFree() {
         preview.value = null
-        if (engine.handsFreeActive.value) c.stopEverything() else engine.startHandsFree()
+        when {
+            engine.state.value == AssistantState.Sleeping -> engine.wakeUp()
+            engine.handsFreeActive.value -> c.stopEverything()
+            else -> engine.startHandsFree()
+        }
     }
 
-    /** Tap on the reactor while Seema speaks: she stops talking and (hands-free) listens again. */
-    fun interrupt() = engine.interrupt()
+    /** Tap on the reactor: stops her talking, or wakes her from sleep mode. */
+    fun tapReactor() {
+        if (engine.state.value == AssistantState.Sleeping) engine.wakeUp() else engine.interrupt()
+    }
+
+    /** "Turn off" on the Safety Mode banner: calls, WhatsApp, SMS, apps and music work again. */
+    fun disableSafetyMode() {
+        viewModelScope.launch { c.settingsRepository.setSafetyMode(false) }
+    }
 
     /** "Resume" on the paused banner: un-pause, then listen hands-free if that is enabled. */
     fun resume() {

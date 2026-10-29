@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import com.raju.aiassistant.domain.voice.afterWakeWord
 import com.raju.aiassistant.domain.voice.isStopCommand
 import com.raju.aiassistant.domain.voice.stripEcho
 import java.time.ZoneId
@@ -46,6 +47,10 @@ private const val DAY_MS = 24 * 60 * 60_000L
 private val DEVANAGARI = Regex("[\\u0900-\\u097F]")
 /** Consecutive recogniser errors (not silence) tolerated in hands-free mode before it stops. */
 private const val MAX_LISTEN_FAILURES = 3
+/** A voice message ending in one of these was cut off by a pause: wait for the rest. */
+private val CONTINUATION = Regex("(^|\\s)(aur|lekin|par|ki|ke|to|toh|matlab|jaise|and|but|or|so|because|और|लेकिन|पर|कि|के|तो|मतलब|जैसे|क्योंकि)[\\s,.…]*$", RegexOption.IGNORE_CASE)
+/** How long to wait for the rest of a sentence that ended in "aur…" / "lekin…". */
+private const val CONTINUATION_WAIT_MS = 6_000L
 
 sealed interface Decision {
     /** Approve; [option] is the chosen contact when [PendingRequest.options] is not empty. */
@@ -77,6 +82,8 @@ class AssistantEngine(
     private val bargeIn: BargeIn = NoBargeIn,
     private val transcriber: Transcriber? = null,
     private val conversationMode: ConversationMode = NoConversationMode,
+    private val wakeListener: WakeListener = NoWakeListener,
+    private val hourOfDay: () -> Int = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
 ) {
     private val _state = MutableStateFlow(AssistantState.Idle)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
@@ -113,6 +120,18 @@ class AssistantEngine(
     /** True while the assistant is in hands-free (always listening) mode. */
     val handsFreeActive: StateFlow<Boolean> = _handsFreeActive.asStateFlow()
 
+    /** Sleep mode (hands-free only): the recogniser is off and a light on-phone detector waits for her name. */
+    private var asleep = false
+    /** Last time the user spoke or Seema finished a turn; the sleep timer counts from here. */
+    private var lastActivityAt = 0L
+    /** Low-confidence recognitions in a row; she asks to repeat only for the first. */
+    private var unclearInARow = 0
+    /** First half of a sentence the user paused in ("… aur"), waiting for the rest. */
+    private var heldVoiceText: String? = null
+    private var heldJob: Job? = null
+    /** The model's reply text for this turn was spoken (so a search needs no "one second…"). */
+    private var replySpoken = false
+
     /** Loads saved chat history into the transcript (call once at startup). */
     suspend fun load() {
         if (!settings.value.saveHistory) return
@@ -129,10 +148,34 @@ class AssistantEngine(
         // One user submission → one request: ignore an identical message sent again within a moment.
         if (!submitGuard.accept(trimmed, clock())) return
         if (!fromVoice) voice.stop() // typed while listening: don't also take a voice result
-        if (fromVoice) listenFailures = 0
+        if (fromVoice) { listenFailures = 0; unclearInARow = 0 }
+        leaveSleep()
+        lastActivityAt = clock()
         cancelWork()
         lastUserText = trimmed
         job = scope.launch { handleUserMessage(trimmed, fromVoice) }
+    }
+
+    /**
+     * A voice result. People pause mid-sentence ("Mummy ko call karo aur…"): when the words end in a
+     * joining word, the assistant keeps listening a few seconds and answers the whole sentence.
+     */
+    private fun onHeard(heard: String) {
+        val text = heldVoiceText?.let { "$it $heard" } ?: heard
+        heldVoiceText = null
+        heldJob?.cancel()
+        if (CONTINUATION.containsMatchIn(text.trim()) && text.trim().split(Regex("\\s+")).size >= 2) {
+            heldVoiceText = text
+            lastActivityAt = clock()
+            heldJob = scope.launch {
+                delay(CONTINUATION_WAIT_MS)
+                // Nothing more came: answer what was said.
+                heldVoiceText?.let { heldVoiceText = null; submit(it, fromVoice = true) }
+            }
+            listen()
+            return
+        }
+        submit(text, fromVoice = true)
     }
 
     /** True when the last request failed and can be sent again. */
@@ -153,6 +196,8 @@ class AssistantEngine(
         }
         cancelWork()
         speaker.stop()
+        leaveSleep()
+        lastActivityAt = clock()
         _voiceSession.value = true
         listen()
     }
@@ -165,6 +210,12 @@ class AssistantEngine(
         handsFree = true
         _handsFreeActive.value = true
         listenFailures = 0
+        // Opening the app always finds her awake; the sleep timer starts again.
+        lastActivityAt = clock()
+        if (asleep) {
+            leaveSleep()
+            _state.value = AssistantState.Idle
+        }
         if (settings.value.assistantPaused) return
         // Call-style audio turns on the phone's echo canceller, so the user can talk over Seema.
         if (settings.value.bargeIn) conversationMode.enter()
@@ -175,6 +226,13 @@ class AssistantEngine(
     /** App went to the background: release the microphone. Hands-free resumes with [startHandsFree]. */
     fun suspendListening() {
         conversationMode.exit()
+        if (asleep) {
+            // No microphone in the background, not even the wake detector.
+            leaveSleep()
+            _state.value = AssistantState.Idle
+        }
+        heldJob?.cancel()
+        heldVoiceText = null
         if (!_voiceSession.value) return
         _voiceSession.value = false
         voice.stop()
@@ -185,12 +243,25 @@ class AssistantEngine(
         _state.value = AssistantState.Listening
         voice.start(
             settings.value.speechLanguage,
-            onResult = { heard -> submit(heard, fromVoice = true) },
+            onResult = { heard -> onHeard(heard) },
             onError = { err ->
                 val keepGoing = handsFree && _voiceSession.value && !settings.value.assistantPaused && !err.permissionDenied
-                if (keepGoing && err.noSpeech) {
-                    // Silence is normal in hands-free mode: just listen again.
-                    relisten(300)
+                val held = heldVoiceText
+                if (held != null && (err.noSpeech || err.unclear)) {
+                    // The pause after "… aur" was the end after all: answer what was said.
+                    heldVoiceText = null
+                    heldJob?.cancel()
+                    submit(held, fromVoice = true)
+                } else if (err.unclear && _voiceSession.value && unclearInARow == 0) {
+                    // Better to ask again than to act on a misheard word.
+                    unclearInARow++
+                    job = scope.launch {
+                        say(if (settings.value.speechLanguage.startsWith("hi")) "माफ़ कीजिए, ठीक से सुनाई नहीं दिया — एक बार फिर बोलिए?" else "Sorry, I didn't catch that clearly — could you say it again?", allowBargeIn = false)
+                        if (_voiceSession.value) listen()
+                    }
+                } else if (keepGoing && (err.noSpeech || err.unclear)) {
+                    // Silence is normal in hands-free mode: listen again, or doze off after a quiet while.
+                    if (sleepDue()) goToSleep() else relisten(300)
                 } else if (keepGoing && listenFailures < MAX_LISTEN_FAILURES) {
                     listenFailures++
                     relisten(2_000)
@@ -218,12 +289,88 @@ class AssistantEngine(
     fun stop() {
         handsFree = false
         _handsFreeActive.value = false
+        leaveSleep()
+        heldJob?.cancel()
+        heldVoiceText = null
         conversationMode.exit()
         _voiceSession.value = false
         voice.stop()
         speaker.stop()
         cancelWork()
         _state.value = AssistantState.Idle
+    }
+
+    // ---------------------------------------------------------------- sleep mode
+
+    private fun sleepDue(): Boolean {
+        val after = settings.value.sleepAfterSeconds
+        return handsFree && after > 0 && _pending.value == null && clock() - lastActivityAt >= after * 1_000L
+    }
+
+    /** Quiet for a while: release the recogniser (no beeps, no data) and wait on the phone for her name. */
+    private fun goToSleep() {
+        voice.stop()
+        _voiceSession.value = false
+        conversationMode.exit()
+        asleep = true
+        _state.value = AssistantState.Sleeping
+        armWakeListener()
+    }
+
+    private fun armWakeListener() {
+        if (!asleep) return
+        wakeListener.start(
+            onUtterance = { pcm -> scope.launch { onWakeAudio(pcm) } },
+            onError = { scope.launch { delay(3_000); armWakeListener() } },
+        )
+    }
+
+    private suspend fun onWakeAudio(pcm: ByteArray) {
+        if (!asleep) return
+        val t = transcriber
+        if (t == null || !t.isAvailable()) {
+            // No speech-to-text for the recording: any voice wakes her, and she listens properly.
+            wakeUp(greet = false)
+            // If it was only the TV, she dozes off again after a short while.
+            lastActivityAt = clock() - settings.value.sleepAfterSeconds * 1_000L + 12_000L
+            return
+        }
+        val heard = runCatching { t.transcribe(pcm) }.getOrNull()?.trim().orEmpty()
+        if (!asleep) return
+        val request = if (settings.value.wakeWord) afterWakeWord(heard) else heard.takeIf { it.length >= 2 }
+        when {
+            request == null -> armWakeListener() // someone else talking, TV, noise: keep sleeping
+            request.isBlank() -> wakeUp() // "Seema?" → "Haan ji, boliye?"
+            else -> {
+                // "Seema, kal ka mausam batao": wake and answer straight away.
+                leaveSleep()
+                _voiceSession.value = true
+                if (settings.value.bargeIn) conversationMode.enter()
+                submit(request, fromVoice = true)
+            }
+        }
+    }
+
+    /** Wakes her from sleep mode (her name, or a tap on the reactor) and listens. */
+    fun wakeUp(greet: Boolean = true) {
+        if (!asleep) return
+        leaveSleep()
+        lastActivityAt = clock()
+        unclearInARow = 0
+        _voiceSession.value = true
+        if (settings.value.bargeIn) conversationMode.enter()
+        if (!greet) { listen(); return }
+        cancelWork()
+        job = scope.launch {
+            say(if (settings.value.speechLanguage.startsWith("hi")) "हाँ जी, बोलिए?" else "Yes, tell me?", allowBargeIn = false)
+            if (_voiceSession.value) listen()
+        }
+    }
+
+    private fun leaveSleep() {
+        if (!asleep) return
+        asleep = false
+        wakeListener.stop()
     }
 
     fun resolve(d: Decision) {
@@ -266,7 +413,10 @@ class AssistantEngine(
         }
         _state.value = AssistantState.Thinking
         val memoryTexts = if (s.memoryEnabled) runCatching { memories.all().map { it.text } }.getOrDefault(emptyList()) else emptyList()
-        val system = buildSystemPrompt(memoryTexts, nowDescription(), s.personality)
+        val recentOpenings = _transcript.value.asReversed().asSequence()
+            .filter { it.role == ChatRole.ASSISTANT }.take(3).map { openingOf(it.text) }.filter { it.isNotBlank() }.toList()
+        val context = PromptContext(voiceTurn = fromVoice, recentOpenings = recentOpenings, partOfDay = partOfDay(hourOfDay()))
+        val system = buildSystemPrompt(memoryTexts, nowDescription(), s.personality, context)
         val turns = toTurns(_transcript.value, s.historyLimit * 2, ModelAdvice.historyCharBudget(model))
 
         val raw = when (val r = provider.chat(model, system, turns)) {
@@ -286,7 +436,8 @@ class AssistantEngine(
         }
 
         val speak = fromVoice || s.autoSpeakReplies
-        if (speak && parsed.text.isNotBlank()) say(parsed.text)
+        replySpoken = speak && parsed.text.isNotBlank()
+        if (replySpoken) say(parsed.text)
 
         var hadActions = false
         for (action in parsed.actions) {
@@ -303,6 +454,7 @@ class AssistantEngine(
 
     private fun finishTurn() {
         val s = settings.value
+        lastActivityAt = clock() // the sleep timer counts from the end of her answer
         if (_voiceSession.value && (s.continuousConversation || handsFree) && !s.assistantPaused) {
             listen()
         } else {
@@ -398,7 +550,7 @@ class AssistantEngine(
         val sensitive = action is AssistantAction.Call || action is AssistantAction.WhatsApp ||
             action is AssistantAction.OpenApp || action is AssistantAction.PlayMusic || action is AssistantAction.Sms
         if (s.safetyMode && sensitive) {
-            report(action, ActionStatus.BLOCKED, "Safety Mode is on, so \"${action.label}\" was not performed. Turn Safety Mode off in Settings to allow it.")
+            report(action, ActionStatus.BLOCKED, "Safety Mode is on, so \"${action.label}\" was not performed. Turn it off with \"Turn off\" on the Home screen (or Settings → Safety Mode) to allow it.")
             return
         }
         _state.value = AssistantState.Executing
@@ -558,6 +710,9 @@ class AssistantEngine(
             report(action, ActionStatus.FAILED, "Web search needs a Tavily API key (Settings → Web search).")
             return
         }
+        // Searching takes a few seconds: like a person, say so instead of going silent.
+        if (speak && !replySpoken) say(if (DEVANAGARI.containsMatchIn(action.query) || settings.value.speechLanguage.startsWith("hi")) "एक सेकंड, देखती हूँ…" else "One second, let me check…", allowBargeIn = false)
+        _state.value = AssistantState.Executing
         val response = when (val r = searchFor(key).search(action.query, topic = action.topic)) {
             is AiResult.Success -> r.value
             is AiResult.Failure -> { report(action, ActionStatus.FAILED, "Web search failed: ${r.message}"); return }

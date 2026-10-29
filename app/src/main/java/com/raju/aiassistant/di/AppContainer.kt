@@ -23,6 +23,9 @@ import com.raju.aiassistant.data.tts.SarvamTtsProvider
 import com.raju.aiassistant.data.tts.TtsManager
 import com.raju.aiassistant.data.voice.DeepgramVoiceInput
 import com.raju.aiassistant.data.voice.MicBargeIn
+import com.raju.aiassistant.data.voice.MicWakeListener
+import com.raju.aiassistant.data.voice.starredContactNames
+import kotlinx.coroutines.withContext
 import com.raju.aiassistant.core.audio.pcm16ToWav
 import com.raju.aiassistant.data.tts.DeepgramClient
 import com.raju.aiassistant.domain.ai.AiResult
@@ -101,7 +104,22 @@ class AppContainer(context: Context) {
             apiKey = { secureKeyStore.get(SecretId.DEEPGRAM_API_KEY) },
             model = { VoiceCatalog.sttOption(currentSettings.value.deepgramSttModel) },
             configured = { SecretId.DEEPGRAM_API_KEY in secureKeyStore.configured.value && online.value },
+            keyterms = ::keyterms,
         )
+    }
+
+    private var cachedKeyterms: Pair<Long, List<String>>? = null
+
+    /**
+     * Words the recogniser should get right: her name and the user's favourite (starred) contacts,
+     * so "Riyashree ko call karo" is not heard as something else. Cached for 10 minutes.
+     */
+    private suspend fun keyterms(): List<String> {
+        val now = System.currentTimeMillis()
+        cachedKeyterms?.let { (at, terms) -> if (now - at < 10 * 60_000L) return terms }
+        val terms = listOf("Seema", "सीमा") + withContext(Dispatchers.IO) { starredContactNames(appContext) }
+        cachedKeyterms = now to terms
+        return terms
     }
     /** Turns the user's interrupting utterance into text (Deepgram, when its key is saved). */
     private val deepgramTranscriber = object : Transcriber {
@@ -110,8 +128,8 @@ class AppContainer(context: Context) {
         override suspend fun transcribe(pcm16k: ByteArray): String? {
             val key = secureKeyStore.get(SecretId.DEEPGRAM_API_KEY) ?: return null
             val option = VoiceCatalog.sttOption(currentSettings.value.deepgramSttModel)
-            return when (val r = DeepgramClient(http, key).transcribe(pcm16ToWav(pcm16k, 16_000), option.model, option.language)) {
-                is AiResult.Success -> r.value
+            return when (val r = DeepgramClient(http, key).transcribeDetailed(pcm16ToWav(pcm16k, 16_000), option.model, option.language, keyterms())) {
+                is AiResult.Success -> r.value.text
                 is AiResult.Failure -> null
             }
         }
@@ -172,6 +190,7 @@ class AppContainer(context: Context) {
             bargeIn = MicBargeIn(appContext, appScope, playbackLevel = { audioPlayer.levelNow() }, callStyle = { conversationAudio.active }),
             conversationMode = conversationAudio,
             transcriber = deepgramTranscriber,
+            wakeListener = MicWakeListener(appContext, appScope),
             nowDescription = { SimpleDateFormat("EEEE, d MMMM yyyy, h:mm a (yyyy-MM-dd'T'HH:mm, z)", Locale.ENGLISH).format(Date()) },
         ).also { e -> appScope.launch { e.load() } }
     }

@@ -52,6 +52,8 @@ fun reactorStyleFor(state: AssistantState): ReactorStyle = when (state) {
     AssistantState.Success -> ReactorStyle(listOf(GREEN, TEAL, CYAN, BLUE, GREEN), glow = 0.85f, rotationSpeed = 0.07f, bpm = 68f)
     AssistantState.Error -> ReactorStyle(listOf(RED, ORANGE, MAGENTA, ORANGE, RED), glow = 0.7f, rotationSpeed = 0.03f, bpm = 112f, flicker = true)
     AssistantState.Offline -> ReactorStyle(listOf(GREY, GREY_LIGHT, GREY, GREY_LIGHT, GREY), glow = 0.2f, rotationSpeed = 0f, bpm = 40f)
+    // Slow, dim breathing: asleep but listening for the user's voice.
+    AssistantState.Sleeping -> ReactorStyle(listOf(VIOLET, BLUE, GREY_LIGHT, VIOLET, BLUE), glow = 0.35f, rotationSpeed = 0.015f, bpm = 34f)
 }
 
 /** Short bilingual hint shown under the reactor. */
@@ -64,4 +66,5 @@ fun statusHintFor(state: AssistantState): String = when (state) {
     AssistantState.Success -> "हो गया! Task completed"
     AssistantState.Error -> "कुछ गड़बड़ हुई — Something went wrong"
     AssistantState.Offline -> "No internet connection — AI features unavailable"
+    AssistantState.Sleeping -> "😴 सो रही हूँ… \"सीमा\" बोलकर जगाइए या reactor छुएँ"
 }

@@ -10,6 +10,8 @@ import com.raju.aiassistant.domain.ai.AiResult
 import com.raju.aiassistant.domain.ai.FailureKind
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -44,12 +46,29 @@ class DeepgramClient(
     }
 
     /** Transcribes a short WAV recording. [language] "multi" handles Hindi and English mixed in one sentence. */
-    suspend fun transcribe(wav: ByteArray, model: String, language: String): AiResult<String> = withRetry {
+    suspend fun transcribe(wav: ByteArray, model: String, language: String): AiResult<String> =
+        when (val r = transcribeDetailed(wav, model, language)) {
+            is AiResult.Success -> AiResult.Success(r.value.text)
+            is AiResult.Failure -> r
+        }
+
+    /**
+     * Like [transcribe], with the model's confidence. [keyterms] (names like "Seema" or contacts) are
+     * boosted on Nova-3; if the service rejects them, the request is repeated without.
+     */
+    suspend fun transcribeDetailed(wav: ByteArray, model: String, language: String, keyterms: List<String> = emptyList()): AiResult<Transcript> {
+        val terms = if (model.startsWith("nova-3")) keyterms.filter { it.isNotBlank() }.distinct().take(MAX_KEYTERMS) else emptyList()
+        val first = listen(wav, model, language, terms)
+        return if (first is AiResult.Failure && terms.isNotEmpty() && first.message.contains("HTTP 400")) listen(wav, model, language, emptyList()) else first
+    }
+
+    private suspend fun listen(wav: ByteArray, model: String, language: String, keyterms: List<String>): AiResult<Transcript> = withRetry {
         val url = "$baseUrl/v1/listen".toHttpUrl().newBuilder()
             .addQueryParameter("model", model)
             .addQueryParameter("language", language)
             .addQueryParameter("smart_format", "true")
             .addQueryParameter("punctuate", "true")
+            .apply { keyterms.forEach { addQueryParameter("keyterm", it) } }
             .build()
         val request = Request.Builder().url(url).header("Authorization", "Token $apiKey")
             .post(wav.toRequestBody(WAV)).build()
@@ -63,14 +82,19 @@ class DeepgramClient(
         }
     }
 
-    private fun parseTranscript(body: String): String? {
+    private fun parseTranscript(body: String): Transcript? {
         val root = runCatching { JsonFormat.parseToJsonElement(body) as JsonObject }.getOrNull() ?: return null
         val channel = ((root["results"] as? JsonObject)?.get("channels") as? JsonArray)?.firstOrNull() as? JsonObject ?: return null
         val alt = (channel["alternatives"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return null
-        return alt.str("transcript").orEmpty().trim()
+        val confidence = (alt["confidence"] as? JsonPrimitive)?.doubleOrNull ?: 1.0
+        return Transcript(alt.str("transcript").orEmpty().trim(), confidence)
     }
 
     private companion object {
         val WAV = "audio/wav".toMediaType()
+        const val MAX_KEYTERMS = 40
     }
 }
+
+/** What Deepgram heard and how sure it is (0..1). */
+data class Transcript(val text: String, val confidence: Double)

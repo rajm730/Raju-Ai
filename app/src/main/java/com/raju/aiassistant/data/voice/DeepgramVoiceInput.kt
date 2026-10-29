@@ -41,6 +41,8 @@ class DeepgramVoiceInput(
     private val apiKey: suspend () -> String?,
     private val model: () -> SttModelOption,
     private val configured: () -> Boolean,
+    /** Words to recognise especially well: "Seema", favourite contacts' names. */
+    private val keyterms: suspend () -> List<String> = { emptyList() },
 ) : VoiceInput {
     private val _listening = MutableStateFlow(false)
     override val listening: StateFlow<Boolean> = _listening.asStateFlow()
@@ -78,10 +80,16 @@ class DeepgramVoiceInput(
                 return@launch
             }
             val option = model()
-            when (val r = DeepgramClient(http, key).transcribe(pcm16ToWav(pcm, SAMPLE_RATE), option.model, option.language)) {
+            when (val r = DeepgramClient(http, key).transcribeDetailed(pcm16ToWav(pcm, SAMPLE_RATE), option.model, option.language, keyterms())) {
                 is AiResult.Success -> {
-                    _partial.value = r.value
-                    if (r.value.isBlank()) onError(VoiceError("I didn't catch that.", noSpeech = true)) else onResult(r.value)
+                    val heard = r.value
+                    _partial.value = heard.text
+                    when {
+                        heard.text.isBlank() -> onError(VoiceError("I didn't catch that.", noSpeech = true))
+                        // Very unsure: better to ask again than to act on a wrong word.
+                        heard.confidence < MIN_CONFIDENCE -> onError(VoiceError("I didn't hear that clearly.", unclear = true))
+                        else -> onResult(heard.text)
+                    }
                 }
                 is AiResult.Failure -> onError(VoiceError("Deepgram: ${r.message}"))
             }
@@ -158,6 +166,7 @@ class DeepgramVoiceInput(
         const val SAMPLE_RATE = 16_000
         const val FRAME_MS = 20
         const val FRAME_BYTES = SAMPLE_RATE / 1000 * FRAME_MS * 2 // 640 bytes = 20 ms of 16-bit mono
+        const val MIN_CONFIDENCE = 0.45
     }
 }
 

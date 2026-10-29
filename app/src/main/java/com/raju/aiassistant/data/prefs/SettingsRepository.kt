@@ -63,6 +63,8 @@ class SettingsRepository(private val context: Context) {
             continuousConversation = this[Keys.CONTINUOUS] ?: d.continuousConversation,
             autoListen = this[Keys.AUTO_LISTEN] ?: d.autoListen,
             bargeIn = this[Keys.BARGE_IN] ?: d.bargeIn,
+            sleepAfterSeconds = this[Keys.SLEEP_AFTER] ?: d.sleepAfterSeconds,
+            wakeWord = this[Keys.WAKE_WORD] ?: d.wakeWord,
             personality = enumOr(this[Keys.PERSONALITY], d.personality),
             announceNotifications = this[Keys.ANNOUNCE] ?: d.announceNotifications,
             announceApps = this[Keys.ANNOUNCE_APPS] ?: d.announceApps,
@@ -106,6 +108,8 @@ class SettingsRepository(private val context: Context) {
     suspend fun setContinuous(v: Boolean) = edit { it[Keys.CONTINUOUS] = v }
     suspend fun setAutoListen(v: Boolean) = edit { it[Keys.AUTO_LISTEN] = v }
     suspend fun setBargeIn(v: Boolean) = edit { it[Keys.BARGE_IN] = v }
+    suspend fun setSleepAfterSeconds(v: Int) = edit { it[Keys.SLEEP_AFTER] = v.coerceIn(0, 3600) }
+    suspend fun setWakeWord(v: Boolean) = edit { it[Keys.WAKE_WORD] = v }
     suspend fun setPersonality(v: Personality) = edit { it[Keys.PERSONALITY] = v.name }
     suspend fun setAnnounce(v: Boolean) = edit { it[Keys.ANNOUNCE] = v }
     suspend fun setAnnounceApp(pkg: String, enabled: Boolean) = edit {
@@ -160,6 +164,8 @@ class SettingsRepository(private val context: Context) {
         val CONTINUOUS = booleanPreferencesKey("continuous_conversation")
         val AUTO_LISTEN = booleanPreferencesKey("auto_listen")
         val BARGE_IN = booleanPreferencesKey("barge_in")
+        val SLEEP_AFTER = intPreferencesKey("sleep_after_seconds")
+        val WAKE_WORD = booleanPreferencesKey("wake_word")
         val PERSONALITY = stringPreferencesKey("personality")
         val ANNOUNCE = booleanPreferencesKey("announce_notifications")
         val ANNOUNCE_APPS = stringSetPreferencesKey("announce_apps")

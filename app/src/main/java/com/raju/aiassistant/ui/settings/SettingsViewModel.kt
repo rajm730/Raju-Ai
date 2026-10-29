@@ -313,6 +313,8 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     }
     fun setPersonality(v: Personality) = launch { repo.setPersonality(v) }
     fun setBargeIn(v: Boolean) = launch { repo.setBargeIn(v) }
+    fun setSleepAfterSeconds(v: Int) = launch { repo.setSleepAfterSeconds(v) }
+    fun setWakeWord(v: Boolean) = launch { repo.setWakeWord(v) }
     fun setAnnounce(v: Boolean) = launch { repo.setAnnounce(v) }
     fun setAnnounceApp(pkg: String, v: Boolean) = launch { repo.setAnnounceApp(pkg, v) }
     fun setAskBeforeReading(v: Boolean) = launch { repo.setAskBeforeReading(v) }

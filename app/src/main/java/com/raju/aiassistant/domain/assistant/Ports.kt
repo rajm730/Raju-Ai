@@ -60,6 +60,20 @@ object NoConversationMode : ConversationMode {
     override fun exit() {}
 }
 
+/**
+ * Sleep-mode listening: waits on the phone (nothing is sent anywhere) until someone speaks, then
+ * delivers that one utterance — with a short pre-roll, so the first word is kept — as 16 kHz PCM.
+ */
+interface WakeListener {
+    fun start(onUtterance: (ByteArray) -> Unit, onError: () -> Unit)
+    fun stop()
+}
+
+object NoWakeListener : WakeListener {
+    override fun start(onUtterance: (ByteArray) -> Unit, onError: () -> Unit) {}
+    override fun stop() {}
+}
+
 /** Speech-to-text for audio the app recorded itself (the interrupting utterance). */
 interface Transcriber {
     fun isAvailable(): Boolean
@@ -67,7 +81,8 @@ interface Transcriber {
     suspend fun transcribe(pcm16k: ByteArray): String?
 }
 
-data class VoiceError(val message: String, val noSpeech: Boolean = false, val permissionDenied: Boolean = false)
+/** [unclear]: speech was heard but recognised with low confidence — ask the user to repeat. */
+data class VoiceError(val message: String, val noSpeech: Boolean = false, val permissionDenied: Boolean = false, val unclear: Boolean = false)
 
 interface ChatHistory {
     suspend fun recent(limit: Int): List<ChatMessage>
