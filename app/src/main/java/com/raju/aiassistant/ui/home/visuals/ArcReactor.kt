@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -111,7 +112,7 @@ fun ArcReactor(
             }
             // Outer HUD ring: thin dashes plus four brackets turning the other way.
             rotate(-t * 9f, c) {
-                drawSegmentedRing(c, r * 0.995f, r * 0.006f, segments = 90, gapDegrees = 2.2f, brush = ringBrush, alpha = 0.45f * flicker)
+                drawDashedRing(c, r * 0.995f, r * 0.006f, segments = 90, gapDegrees = 2.2f, brush = ringBrush, alpha = 0.45f * flicker)
             }
             rotate(t * 14f, c) {
                 repeat(4) { i -> drawArcAround(c, r * 0.965f, i * 90f + 20f, 28f, accent.copy(alpha = 0.75f * flicker), r * 0.014f) }
@@ -123,7 +124,7 @@ fun ArcReactor(
         scale(1f + 0.06f * beat, pivot = c) {
             if (richEffects) {
                 rotate(-spin * 0.7f, c) {
-                    drawSegmentedRing(c, r * 0.9f, r * 0.012f, segments = 36, gapDegrees = 4f, brush = ringBrush, alpha = 0.7f * flicker)
+                    drawDashedRing(c, r * 0.9f, r * 0.012f, segments = 36, gapDegrees = 4f, brush = ringBrush, alpha = 0.7f * flicker)
                 }
             }
             rotate(spin, c) {
@@ -286,4 +287,18 @@ private fun DrawScope.drawTriangle(c: Offset, radius: Float, brush: Brush, width
     }
     path.close()
     drawPath(path, brush, alpha = alpha.coerceIn(0f, 1f), style = Stroke(width = width, cap = StrokeCap.Round))
+}
+
+/** Many thin segments drawn as ONE dashed circle (a single draw call instead of one per segment). */
+private fun DrawScope.drawDashedRing(c: Offset, radius: Float, thickness: Float, segments: Int, gapDegrees: Float, brush: Brush, alpha: Float) {
+    val circumference = (2.0 * PI * radius).toFloat()
+    val gap = circumference * gapDegrees / 360f
+    val dash = circumference / segments - gap
+    drawCircle(
+        brush = brush,
+        radius = radius,
+        center = c,
+        alpha = alpha.coerceIn(0f, 1f),
+        style = Stroke(width = thickness, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, gap))),
+    )
 }
