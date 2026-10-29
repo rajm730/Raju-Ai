@@ -41,6 +41,8 @@ Personal Hindi/Hinglish/English AI assistant for Android — Kotlin, Jetpack Com
 Command line: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` · `./gradlew testDebugUnitTest`
 
 ### Ready-made APK from GitHub (no Android Studio needed)
+**Phone par seedha download (free, bina login):** https://github.com/rajm730/Raju-Ai/releases/latest → `Seema-AI.apk`. Har baar `main` update hone par yahan naya APK apne-aap aa jata hai.
+
 Every push and pull request runs **GitHub Actions → Android CI** (`.github/workflows/android.yml`) on GitHub's servers: `assembleDebug`, `testDebugUnitTest` (with a test-count summary in the log) and `lintDebug` (fails the run on lint errors). No secrets are used or printed by CI.
 1. Open https://github.com/rajm730/Raju-Ai/actions → the latest green **Android CI** run.
 2. Under **Artifacts**, download **raju-ai-debug-apk** (zip) → extract `app-debug.apk`.
