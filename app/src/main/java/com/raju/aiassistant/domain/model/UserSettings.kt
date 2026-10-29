@@ -56,6 +56,9 @@ data class UserSettings(
     val announcementsActive: Boolean get() = announceNotifications && !assistantPaused && !safetyMode
 }
 
-/** Female voices offered by Sarvam Bulbul v2 (from Sarvam's API documentation). */
-val SARVAM_FEMALE_SPEAKERS = listOf("anushka", "manisha", "vidya", "arya")
+/** Female voices of Sarvam Bulbul v3 (names are lowercase and case-sensitive). The first one is the default. */
+val SARVAM_FEMALE_SPEAKERS = listOf("priya", "ritu", "kavya", "neha", "simran", "ishita", "shreya", "pooja", "roopa")
+
+/** A saved Bulbul v2 voice (anushka, manisha, ...) is rejected by v3, so it falls back to the default. */
+fun validSarvamSpeaker(saved: String?): String = saved?.takeIf { it in SARVAM_FEMALE_SPEAKERS } ?: SARVAM_FEMALE_SPEAKERS.first()
 val SPEECH_LANGUAGES = listOf("hi-IN" to "Hindi / Hinglish", "en-IN" to "English (India)")

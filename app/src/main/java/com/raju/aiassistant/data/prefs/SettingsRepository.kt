@@ -17,6 +17,7 @@ import com.raju.aiassistant.domain.model.ConnectionTest
 import com.raju.aiassistant.domain.model.MusicService
 import com.raju.aiassistant.domain.model.TtsEngine
 import com.raju.aiassistant.domain.model.UserSettings
+import com.raju.aiassistant.domain.model.validSarvamSpeaker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -42,7 +43,7 @@ class SettingsRepository(private val context: Context) {
             saveHistory = this[Keys.SAVE_HISTORY] ?: d.saveHistory,
             historyLimit = this[Keys.HISTORY_LIMIT] ?: d.historyLimit,
             ttsEngine = enumOr(this[Keys.TTS_ENGINE], d.ttsEngine),
-            sarvamSpeaker = this[Keys.SARVAM_SPEAKER] ?: d.sarvamSpeaker,
+            sarvamSpeaker = validSarvamSpeaker(this[Keys.SARVAM_SPEAKER]),
             speechRate = this[Keys.SPEECH_RATE] ?: d.speechRate,
             androidVoice = this[Keys.ANDROID_VOICE],
             speechLanguage = this[Keys.SPEECH_LANGUAGE] ?: d.speechLanguage,

@@ -15,7 +15,7 @@ The engine selected in Settings → Voice is tried first, then the others (`prov
 
 | Order (default) | Engine | Needs | Hindi | Notes |
 |---|---|---|---|---|
-| 1 | **Sarvam AI Bulbul v2** (cloud) | Sarvam key + internet | Yes; also handles code-mixed Hinglish | Female voices: anushka, manisha, vidya, arya. `enable_preprocessing` turns on number/English-word normalisation |
+| 1 | **Sarvam AI Bulbul v3** (cloud; v2 was retired by Sarvam) | Sarvam key + internet | Yes; also handles code-mixed Hinglish | Female voices: priya (default), ritu, kavya, neha, simran, ishita, shreya, pooja, roopa. A saved v2 voice (anushka etc.) falls back to priya. No pitch/loudness in v3 |
 | 2 | **Android TextToSpeech** (on-device) | Hindi voice data installed | Depends on the phone's TTS engine (Google/Samsung) | Always available as the last fallback |
 
 - **No key or no internet:** Sarvam is skipped silently.
