@@ -65,5 +65,6 @@ class EchoAwareVadTest {
         assertEquals("ruko ek minute", stripEcho("halki hawa ruko ek minute", spoken))
         assertEquals("", stripEcho("shaam ko halki", spoken))
         assertEquals("Mumbai ka batao", stripEcho("Mumbai ka batao", spoken))
+        assertEquals("Delhi ka mausam batao", stripEcho("Delhi ka mausam batao", spoken)) // one shared word is the user's
     }
 }

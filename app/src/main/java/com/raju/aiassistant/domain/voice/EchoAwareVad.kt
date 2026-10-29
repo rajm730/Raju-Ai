@@ -131,14 +131,20 @@ fun isStopCommand(heard: String): Boolean {
 private val WORD = Regex("[\\p{L}\\p{M}\\p{N}]+")
 
 /**
- * The recording of an interruption starts a little before the user was detected, so it can begin
- * with the assistant's own words (echo). Leading words that the assistant was saying are removed;
- * what is left is what the user said ("" if it was only echo).
+ * The recording of an interruption starts a little before the user was detected (~0.4 s), so it can
+ * begin with the assistant's own last words (echo). A leading run of at least two words that appears
+ * word-for-word in what she was saying is removed; a single matching word is kept, because it is just
+ * as likely to be the user's own (e.g. "Delhi ka mausam batao" right after she said "Delhi").
  */
 fun stripEcho(heard: String, spoken: String): String {
-    val own = WORD.findAll(spoken.lowercase()).map { it.value }.toSet()
+    val own = WORD.findAll(spoken.lowercase()).map { it.value }.toList()
     val words = WORD.findAll(heard).toList()
-    val firstUserWord = words.indexOfFirst { it.value.lowercase() !in own }
-    if (firstUserWord < 0) return ""
-    return heard.substring(words[firstUserWord].range.first).trim()
+    var best = 0
+    for (n in minOf(words.size, 4) downTo 2) {
+        val prefix = words.take(n).map { it.value.lowercase() }
+        if (own.windowed(n).any { it == prefix }) { best = n; break }
+    }
+    if (best == 0) return heard.trim()
+    if (best == words.size) return ""
+    return heard.substring(words[best].range.first).trim()
 }
